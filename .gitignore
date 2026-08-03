@@ -13,3 +13,9 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+# Generated datasets
+data/generated/*
+!data/generated/.gitkeep
+
+data/quality_samples/*
+!data/quality_samples/.gitkeep
