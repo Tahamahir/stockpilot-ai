@@ -25,3 +25,11 @@ airflow/logs/*
 
 airflow/config/*
 !airflow/config/.gitkeep
+# dbt generated files
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+
+# Python cache
+__pycache__/
+*.py[cod]
