@@ -1,0 +1,40 @@
+{
+    "path_count": 134,
+    "parsed_path_count": 134,
+    "static_analysis_path_count": 0,
+    "static_analysis_parsed_path_count": 0,
+    "is_partial_parse_enabled": true,
+    "is_static_analysis_enabled": true,
+    "read_files_elapsed": 0.07871547200011264,
+    "load_macros_elapsed": 0.48785821799992846,
+    "parse_project_elapsed": 0.009935419000157708,
+    "patch_sources_elapsed": 6.621000011364231e-06,
+    "process_manifest_elapsed": 0.019614113999978144,
+    "load_all_elapsed": 0.640364431999842,
+    "projects": [
+        {
+            "project_name": "stockpilot",
+            "elapsed": 0.008186175000446383,
+            "parsers": [],
+            "parsed_path_count": 0
+        },
+        {
+            "project_name": "dbt_postgres",
+            "elapsed": 0.0007332820000556239,
+            "parsers": [],
+            "parsed_path_count": 0
+        },
+        {
+            "project_name": "dbt",
+            "elapsed": 0.00097190100041189,
+            "parsers": [
+                {
+                    "parser": "doc",
+                    "elapsed": 0.00014688099963677814,
+                    "parsed_path_count": 1
+                }
+            ],
+            "parsed_path_count": 1
+        }
+    ]
+}

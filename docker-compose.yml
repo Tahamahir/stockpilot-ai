@@ -54,6 +54,33 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+   # =======================================================
+  # dbt transformations
+  # =======================================================
+  dbt:
+    build:
+      context: .
+      dockerfile: dbt/Dockerfile
+
+    container_name: stockpilot-dbt
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      DBT_HOST: postgres
+      DBT_PORT: "5432"
+      DBT_DBNAME: "${POSTGRES_DB}"
+      DBT_USER: "${POSTGRES_USER}"
+      DBT_PASSWORD: "${POSTGRES_PASSWORD}"
+      DBT_SCHEMA: staging
+      DBT_PROFILES_DIR: /usr/app/dbt
+
+    working_dir: /usr/app/dbt
+
+    volumes:
+      - ./dbt:/usr/app/dbt      
 
   # =======================================================
   # Airflow local development service
@@ -106,3 +133,5 @@ volumes:
 
   airflow_home:
     name: stockpilot-airflow-home
+
+   
