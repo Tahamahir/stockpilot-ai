@@ -1,0 +1,334 @@
+version: 2
+
+models:
+  # =======================================================
+  # DAILY PRODUCT SALES
+  # =======================================================
+  - name: int_daily_product_sales
+    description: >
+      Agrégation quotidienne des ventes par entreprise,
+      magasin et produit.
+
+    columns:
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: sale_date
+        description: Date des ventes agrégées.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Identifiant du magasin.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: product_id
+        description: Identifiant du produit.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: transaction_count
+        description: Nombre de transactions enregistrées.
+        data_tests:
+          - not_null
+
+      - name: total_quantity_sold
+        description: Quantité totale vendue.
+        data_tests:
+          - not_null
+
+      - name: gross_revenue
+        description: Chiffre d’affaires avant les remises.
+        data_tests:
+          - not_null
+
+      - name: total_discount_amount
+        description: Montant total des remises.
+        data_tests:
+          - not_null
+
+      - name: net_revenue
+        description: Chiffre d’affaires après remises.
+        data_tests:
+          - not_null
+
+      - name: average_unit_price
+        description: Prix de vente unitaire moyen.
+        data_tests:
+          - not_null
+
+      - name: average_discount_percentage
+        description: Pourcentage moyen de remise.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # SALES WITH PROMOTIONS
+  # =======================================================
+  - name: int_sales_with_promotions
+    description: >
+      Transactions de vente enrichies avec les promotions
+      actives à la date de chaque vente.
+
+    columns:
+      - name: sale_id
+        description: Identifiant unique de la vente.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: sale_date
+        description: Date de la vente.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Magasin ayant effectué la vente.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: product_id
+        description: Produit vendu.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: quantity
+        description: Quantité vendue.
+        data_tests:
+          - not_null
+
+      - name: total_amount
+        description: Montant total de la vente.
+        data_tests:
+          - not_null
+
+      - name: is_promotion_sale
+        description: Indique si la vente correspond à une promotion.
+        data_tests:
+          - not_null
+
+      - name: promotion_revenue
+        description: Chiffre d’affaires réalisé pendant une promotion.
+        data_tests:
+          - not_null
+
+      - name: regular_revenue
+        description: Chiffre d’affaires réalisé hors promotion.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # INVENTORY MOVEMENTS
+  # =======================================================
+  - name: int_inventory_movements
+    description: >
+      Évolution quotidienne des stocks avec comparaison
+      aux valeurs du jour précédent.
+
+    columns:
+      - name: inventory_id
+        description: Identifiant du relevé de stock.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: inventory_date
+        description: Date du relevé de stock.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Magasin concerné.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: product_id
+        description: Produit concerné.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: stock_on_hand
+        description: Stock disponible à la date du relevé.
+        data_tests:
+          - not_null
+
+      - name: inventory_position
+        description: Position globale du stock.
+        data_tests:
+          - not_null
+
+      - name: is_stock_increase
+        description: Indique une augmentation du stock.
+        data_tests:
+          - not_null
+
+      - name: is_stock_decrease
+        description: Indique une diminution du stock.
+        data_tests:
+          - not_null
+
+      - name: is_new_stockout
+        description: Indique le début d’une rupture de stock.
+        data_tests:
+          - not_null
+
+      - name: is_restocked
+        description: Indique une sortie de rupture après réapprovisionnement.
+        data_tests:
+          - not_null
+
+      - name: is_out_of_stock
+        description: Indique si le produit est actuellement en rupture.
+        data_tests:
+          - not_null
+
+      - name: has_backorders
+        description: Indique la présence de demandes clients non satisfaites.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # SUPPLIER PERFORMANCE
+  # =======================================================
+  - name: int_supplier_performance
+    description: >
+      Indicateurs agrégés de performance des fournisseurs,
+      incluant les délais, les retards et les taux de réception.
+
+    columns:
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: supplier_id
+        description: Identifiant unique du fournisseur.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_suppliers')
+                field: supplier_id
+
+      - name: supplier_code
+        description: Code métier du fournisseur.
+        data_tests:
+          - not_null
+
+      - name: supplier_name
+        description: Nom du fournisseur.
+        data_tests:
+          - not_null
+
+      - name: total_purchase_orders
+        description: Nombre total de commandes.
+        data_tests:
+          - not_null
+
+      - name: delivered_orders
+        description: Nombre de commandes livrées.
+        data_tests:
+          - not_null
+
+      - name: open_orders
+        description: Nombre de commandes non encore livrées.
+        data_tests:
+          - not_null
+
+      - name: cancelled_orders
+        description: Nombre de commandes annulées.
+        data_tests:
+          - not_null
+
+      - name: on_time_deliveries
+        description: Nombre de commandes livrées à temps.
+        data_tests:
+          - not_null
+
+      - name: late_deliveries
+        description: Nombre de commandes livrées en retard.
+        data_tests:
+          - not_null
+
+      - name: total_ordered_quantity
+        description: Quantité totale commandée.
+        data_tests:
+          - not_null
+
+      - name: total_received_quantity
+        description: Quantité totale reçue.
+        data_tests:
+          - not_null
+
+      - name: quantity_fulfillment_rate_percentage
+        description: Pourcentage des quantités commandées effectivement reçues.
+        data_tests:
+          - not_null
+
+      - name: average_expected_lead_time_days
+        description: Délai moyen de livraison prévu.
+        data_tests:
+          - not_null
+
+      - name: average_actual_lead_time_days
+        description: Délai moyen réel des commandes livrées.
+
+      - name: average_delivery_delay_days
+        description: Retard moyen par rapport aux dates prévues.
+
+      - name: on_time_delivery_rate_percentage
+        description: Pourcentage des livraisons effectuées à temps.
