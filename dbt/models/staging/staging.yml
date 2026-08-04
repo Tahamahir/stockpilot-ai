@@ -1,0 +1,107 @@
+version: 2
+
+models:
+  - name: stg_companies
+    description: Cleaned company master data.
+
+    columns:
+      - name: tenant_id
+        description: Unique company identifier.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: company_name
+        description: Cleaned company name.
+        data_tests:
+          - not_null
+
+  - name: stg_stores
+    description: Cleaned store and warehouse data.
+
+    columns:
+      - name: store_id
+        description: Unique store identifier.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Company owning the store.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: store_code
+        data_tests:
+          - not_null
+
+      - name: store_name
+        data_tests:
+          - not_null
+
+  - name: stg_suppliers
+    description: Cleaned supplier master data.
+
+    columns:
+      - name: supplier_id
+        description: Unique supplier identifier.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Company owning the supplier record.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: supplier_code
+        data_tests:
+          - not_null
+
+      - name: supplier_name
+        data_tests:
+          - not_null
+
+  - name: stg_products
+    description: Cleaned product catalogue.
+
+    columns:
+      - name: product_id
+        description: Unique product identifier.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Company owning the product.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: supplier_id
+        description: Main supplier of the product.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_suppliers')
+                field: supplier_id
+
+      - name: sku
+        data_tests:
+          - unique
+          - not_null
+
+      - name: product_name
+        data_tests:
+          - not_null

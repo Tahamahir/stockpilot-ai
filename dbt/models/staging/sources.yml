@@ -1,0 +1,106 @@
+version: 2
+
+sources:
+  - name: stockpilot_raw
+    description: >
+      Raw StockPilot data loaded into PostgreSQL by Apache Airflow.
+
+    schema: raw
+    loader: airflow
+
+    tables:
+      - name: companies
+        description: Companies using StockPilot.
+
+        columns:
+          - name: tenant_id
+            description: Unique company identifier.
+            data_tests:
+              - unique
+              - not_null
+
+          - name: company_name
+            data_tests:
+              - not_null
+
+      - name: stores
+        description: Stores and warehouses belonging to companies.
+
+        columns:
+          - name: store_id
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: store_code
+            data_tests:
+              - not_null
+
+      - name: suppliers
+        description: Suppliers used by StockPilot companies.
+
+        columns:
+          - name: supplier_id
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: supplier_code
+            data_tests:
+              - not_null
+
+      - name: products
+        description: Product catalogue.
+
+        columns:
+          - name: product_id
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: supplier_id
+            data_tests:
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'suppliers')
+                    field: supplier_id
+
+          - name: sku
+            data_tests:
+              - not_null
+
+      - name: sales
+        description: Historical sales transactions.
+
+      - name: inventory
+        description: Daily inventory snapshots.
+
+      - name: promotions
+        description: Product promotions by store.
+
+      - name: purchase_orders
+        description: Supplier purchase orders.
