@@ -19,3 +19,9 @@ data/generated/*
 
 data/quality_samples/*
 !data/quality_samples/.gitkeep
+# Airflow runtime files
+airflow/logs/*
+!airflow/logs/.gitkeep
+
+airflow/config/*
+!airflow/config/.gitkeep
