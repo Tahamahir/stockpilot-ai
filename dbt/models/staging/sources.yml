@@ -3,36 +3,64 @@ version: 2
 sources:
   - name: stockpilot_raw
     description: >
-      Raw StockPilot data loaded into PostgreSQL by Apache Airflow.
+      Données brutes de StockPilot AI chargées dans PostgreSQL
+      par les pipelines Apache Airflow.
 
     schema: raw
     loader: airflow
 
     tables:
+      # =====================================================
+      # COMPANIES
+      # =====================================================
       - name: companies
-        description: Companies using StockPilot.
+        description: Entreprises utilisant StockPilot AI.
 
         columns:
           - name: tenant_id
-            description: Unique company identifier.
+            description: Identifiant unique de l’entreprise.
             data_tests:
               - unique
               - not_null
 
           - name: company_name
+            description: Nom de l’entreprise.
             data_tests:
               - not_null
 
+          - name: industry
+            description: Secteur d’activité de l’entreprise.
+
+          - name: country
+            description: Pays dans lequel l’entreprise exerce.
+            data_tests:
+              - not_null
+
+          - name: created_at
+            description: Date de création de l’enregistrement.
+            data_tests:
+              - not_null
+
+          - name: updated_at
+            description: Date de dernière modification.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # STORES
+      # =====================================================
       - name: stores
-        description: Stores and warehouses belonging to companies.
+        description: Magasins et dépôts appartenant aux entreprises.
 
         columns:
           - name: store_id
+            description: Identifiant unique du magasin.
             data_tests:
               - unique
               - not_null
 
           - name: tenant_id
+            description: Entreprise propriétaire du magasin.
             data_tests:
               - not_null
               - relationships:
@@ -41,19 +69,46 @@ sources:
                     field: tenant_id
 
           - name: store_code
+            description: Code métier du magasin.
             data_tests:
               - not_null
 
+          - name: store_name
+            description: Nom du magasin.
+            data_tests:
+              - not_null
+
+          - name: city
+            description: Ville du magasin.
+
+          - name: region
+            description: Région du magasin.
+
+          - name: active
+            description: Indique si le magasin est actif.
+            data_tests:
+              - not_null
+
+          - name: created_at
+            description: Date de création de l’enregistrement.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # SUPPLIERS
+      # =====================================================
       - name: suppliers
-        description: Suppliers used by StockPilot companies.
+        description: Fournisseurs associés aux entreprises.
 
         columns:
           - name: supplier_id
+            description: Identifiant unique du fournisseur.
             data_tests:
               - unique
               - not_null
 
           - name: tenant_id
+            description: Entreprise propriétaire du fournisseur.
             data_tests:
               - not_null
               - relationships:
@@ -62,19 +117,50 @@ sources:
                     field: tenant_id
 
           - name: supplier_code
+            description: Code métier du fournisseur.
             data_tests:
               - not_null
 
+          - name: supplier_name
+            description: Nom du fournisseur.
+            data_tests:
+              - not_null
+
+          - name: average_lead_time_days
+            description: Délai moyen de livraison en jours.
+            data_tests:
+              - not_null
+
+          - name: minimum_order_value
+            description: Valeur minimale d’une commande.
+            data_tests:
+              - not_null
+
+          - name: active
+            description: Indique si le fournisseur est actif.
+            data_tests:
+              - not_null
+
+          - name: created_at
+            description: Date de création de l’enregistrement.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # PRODUCTS
+      # =====================================================
       - name: products
-        description: Product catalogue.
+        description: Catalogue des produits des entreprises.
 
         columns:
           - name: product_id
+            description: Identifiant unique du produit.
             data_tests:
               - unique
               - not_null
 
           - name: tenant_id
+            description: Entreprise propriétaire du produit.
             data_tests:
               - not_null
               - relationships:
@@ -83,6 +169,7 @@ sources:
                     field: tenant_id
 
           - name: supplier_id
+            description: Fournisseur principal du produit.
             data_tests:
               - relationships:
                   arguments:
@@ -90,17 +177,337 @@ sources:
                     field: supplier_id
 
           - name: sku
+            description: Référence métier du produit.
             data_tests:
               - not_null
 
+          - name: product_name
+            description: Nom du produit.
+            data_tests:
+              - not_null
+
+          - name: category_name
+            description: Catégorie du produit.
+
+          - name: purchase_price
+            description: Prix d’achat unitaire.
+            data_tests:
+              - not_null
+
+          - name: selling_price
+            description: Prix de vente unitaire.
+            data_tests:
+              - not_null
+
+          - name: lead_time_days
+            description: Délai fournisseur du produit.
+            data_tests:
+              - not_null
+
+          - name: minimum_order_quantity
+            description: Quantité minimale de commande.
+            data_tests:
+              - not_null
+
+          - name: package_size
+            description: Nombre d’unités par colis.
+            data_tests:
+              - not_null
+
+          - name: active
+            description: Indique si le produit est actif.
+            data_tests:
+              - not_null
+
+          - name: created_at
+            description: Date de création de l’enregistrement.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # SALES
+      # =====================================================
       - name: sales
-        description: Historical sales transactions.
+        description: Historique des transactions de vente.
 
+        columns:
+          - name: sale_id
+            description: Identifiant unique de la vente.
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            description: Entreprise concernée par la vente.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: sale_reference
+            description: Référence métier de la vente.
+
+          - name: sale_date
+            description: Date de réalisation de la vente.
+            data_tests:
+              - not_null
+
+          - name: store_id
+            description: Magasin ayant effectué la vente.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'stores')
+                    field: store_id
+
+          - name: product_id
+            description: Produit vendu.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'products')
+                    field: product_id
+
+          - name: quantity
+            description: Quantité vendue.
+            data_tests:
+              - not_null
+
+          - name: unit_price
+            description: Prix unitaire appliqué.
+            data_tests:
+              - not_null
+
+          - name: discount_percentage
+            description: Pourcentage de remise appliqué.
+            data_tests:
+              - not_null
+
+          - name: total_amount
+            description: Montant total de la vente.
+            data_tests:
+              - not_null
+
+          - name: imported_at
+            description: Date de chargement dans PostgreSQL.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # INVENTORY
+      # =====================================================
       - name: inventory
-        description: Daily inventory snapshots.
+        description: Relevés journaliers des stocks.
 
+        columns:
+          - name: inventory_id
+            description: Identifiant unique du relevé de stock.
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            description: Entreprise propriétaire du stock.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: inventory_date
+            description: Date du relevé de stock.
+            data_tests:
+              - not_null
+
+          - name: store_id
+            description: Magasin ou dépôt concerné.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'stores')
+                    field: store_id
+
+          - name: product_id
+            description: Produit concerné.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'products')
+                    field: product_id
+
+          - name: stock_on_hand
+            description: Quantité physiquement disponible.
+            data_tests:
+              - not_null
+
+          - name: quantity_on_order
+            description: Quantité déjà commandée au fournisseur.
+            data_tests:
+              - not_null
+
+          - name: backorders
+            description: Quantité demandée par les clients mais non disponible.
+            data_tests:
+              - not_null
+
+          - name: imported_at
+            description: Date de chargement dans PostgreSQL.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # PROMOTIONS
+      # =====================================================
       - name: promotions
-        description: Product promotions by store.
+        description: Promotions appliquées aux produits par magasin.
 
+        columns:
+          - name: promotion_id
+            description: Identifiant unique de la promotion.
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            description: Entreprise concernée par la promotion.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: product_id
+            description: Produit concerné par la promotion.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'products')
+                    field: product_id
+
+          - name: store_id
+            description: Magasin dans lequel la promotion s’applique.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'stores')
+                    field: store_id
+
+          - name: start_date
+            description: Date de début de la promotion.
+            data_tests:
+              - not_null
+
+          - name: end_date
+            description: Date de fin de la promotion.
+            data_tests:
+              - not_null
+
+          - name: discount_percentage
+            description: Pourcentage de remise.
+            data_tests:
+              - not_null
+
+          - name: imported_at
+            description: Date d’importation dans PostgreSQL.
+            data_tests:
+              - not_null
+
+      # =====================================================
+      # PURCHASE ORDERS
+      # =====================================================
       - name: purchase_orders
-        description: Supplier purchase orders.
+        description: Commandes de réapprovisionnement auprès des fournisseurs.
+
+        columns:
+          - name: purchase_order_id
+            description: Identifiant unique de la commande fournisseur.
+            data_tests:
+              - unique
+              - not_null
+
+          - name: tenant_id
+            description: Entreprise ayant émis la commande.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'companies')
+                    field: tenant_id
+
+          - name: supplier_id
+            description: Fournisseur destinataire de la commande.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'suppliers')
+                    field: supplier_id
+
+          - name: product_id
+            description: Produit commandé.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'products')
+                    field: product_id
+
+          - name: store_id
+            description: Magasin destinataire de la commande.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('stockpilot_raw', 'stores')
+                    field: store_id
+
+          - name: order_date
+            description: Date de création de la commande.
+            data_tests:
+              - not_null
+
+          - name: expected_delivery_date
+            description: Date de livraison initialement prévue.
+            data_tests:
+              - not_null
+
+          - name: actual_delivery_date
+            description: Date réelle de livraison.
+
+          - name: ordered_quantity
+            description: Quantité commandée.
+            data_tests:
+              - not_null
+
+          - name: received_quantity
+            description: Quantité réellement reçue.
+            data_tests:
+              - not_null
+
+          - name: status
+            description: Statut de la commande fournisseur.
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values:
+                      - open
+                      - received
+                      - partially_received
+                      - delayed
+                      - cancelled
+
+          - name: imported_at
+            description: Date de chargement dans PostgreSQL.
+            data_tests:
+              - not_null

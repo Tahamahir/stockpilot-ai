@@ -1,33 +1,59 @@
 version: 2
 
 models:
+  # =======================================================
+  # STG COMPANIES
+  # =======================================================
   - name: stg_companies
-    description: Cleaned company master data.
+    description: >
+      Données nettoyées et standardisées des entreprises utilisant
+      StockPilot AI.
 
     columns:
       - name: tenant_id
-        description: Unique company identifier.
+        description: Identifiant unique de l’entreprise.
         data_tests:
           - unique
           - not_null
 
       - name: company_name
-        description: Cleaned company name.
+        description: Nom nettoyé de l’entreprise.
         data_tests:
           - not_null
 
+      - name: industry
+        description: Secteur d’activité de l’entreprise.
+
+      - name: country
+        description: Pays de l’entreprise.
+        data_tests:
+          - not_null
+
+      - name: created_at
+        description: Date de création de l’enregistrement.
+        data_tests:
+          - not_null
+
+      - name: updated_at
+        description: Date de dernière modification.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG STORES
+  # =======================================================
   - name: stg_stores
-    description: Cleaned store and warehouse data.
+    description: Données nettoyées des magasins et dépôts.
 
     columns:
       - name: store_id
-        description: Unique store identifier.
+        description: Identifiant unique du magasin.
         data_tests:
           - unique
           - not_null
 
       - name: tenant_id
-        description: Company owning the store.
+        description: Entreprise propriétaire du magasin.
         data_tests:
           - not_null
           - relationships:
@@ -36,25 +62,46 @@ models:
                 field: tenant_id
 
       - name: store_code
+        description: Code normalisé du magasin.
         data_tests:
           - not_null
 
       - name: store_name
+        description: Nom nettoyé du magasin.
         data_tests:
           - not_null
 
+      - name: city
+        description: Ville du magasin.
+
+      - name: region
+        description: Région du magasin.
+
+      - name: active
+        description: Indique si le magasin est actif.
+        data_tests:
+          - not_null
+
+      - name: created_at
+        description: Date de création de l’enregistrement.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG SUPPLIERS
+  # =======================================================
   - name: stg_suppliers
-    description: Cleaned supplier master data.
+    description: Données nettoyées des fournisseurs.
 
     columns:
       - name: supplier_id
-        description: Unique supplier identifier.
+        description: Identifiant unique du fournisseur.
         data_tests:
           - unique
           - not_null
 
       - name: tenant_id
-        description: Company owning the supplier record.
+        description: Entreprise propriétaire du fournisseur.
         data_tests:
           - not_null
           - relationships:
@@ -63,25 +110,50 @@ models:
                 field: tenant_id
 
       - name: supplier_code
+        description: Code normalisé du fournisseur.
         data_tests:
           - not_null
 
       - name: supplier_name
+        description: Nom nettoyé du fournisseur.
         data_tests:
           - not_null
 
+      - name: average_lead_time_days
+        description: Délai moyen de livraison en jours.
+        data_tests:
+          - not_null
+
+      - name: minimum_order_value
+        description: Valeur minimale de commande.
+        data_tests:
+          - not_null
+
+      - name: active
+        description: Indique si le fournisseur est actif.
+        data_tests:
+          - not_null
+
+      - name: created_at
+        description: Date de création de l’enregistrement.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG PRODUCTS
+  # =======================================================
   - name: stg_products
-    description: Cleaned product catalogue.
+    description: Catalogue nettoyé et standardisé des produits.
 
     columns:
       - name: product_id
-        description: Unique product identifier.
+        description: Identifiant unique du produit.
         data_tests:
           - unique
           - not_null
 
       - name: tenant_id
-        description: Company owning the product.
+        description: Entreprise propriétaire du produit.
         data_tests:
           - not_null
           - relationships:
@@ -90,7 +162,7 @@ models:
                 field: tenant_id
 
       - name: supplier_id
-        description: Main supplier of the product.
+        description: Fournisseur principal du produit.
         data_tests:
           - relationships:
               arguments:
@@ -98,10 +170,401 @@ models:
                 field: supplier_id
 
       - name: sku
+        description: Référence métier normalisée du produit.
+        data_tests:
+          - not_null
+
+      - name: product_name
+        description: Nom nettoyé du produit.
+        data_tests:
+          - not_null
+
+      - name: category_name
+        description: Catégorie du produit.
+
+      - name: purchase_price
+        description: Prix d’achat unitaire.
+        data_tests:
+          - not_null
+
+      - name: selling_price
+        description: Prix de vente unitaire.
+        data_tests:
+          - not_null
+
+      - name: lead_time_days
+        description: Délai fournisseur du produit.
+        data_tests:
+          - not_null
+
+      - name: minimum_order_quantity
+        description: Quantité minimale de commande.
+        data_tests:
+          - not_null
+
+      - name: package_size
+        description: Nombre d’unités par colis.
+        data_tests:
+          - not_null
+
+      - name: active
+        description: Indique si le produit est actif.
+        data_tests:
+          - not_null
+
+      - name: created_at
+        description: Date de création du produit.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG SALES
+  # =======================================================
+  - name: stg_sales
+    description: >
+      Transactions de vente nettoyées avec recalcul et contrôle
+      du montant total.
+
+    columns:
+      - name: sale_id
+        description: Identifiant unique de la vente.
         data_tests:
           - unique
           - not_null
 
-      - name: product_name
+      - name: tenant_id
+        description: Entreprise concernée par la vente.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: sale_reference
+        description: Référence métier de la vente.
+
+      - name: sale_date
+        description: Date de réalisation de la vente.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Magasin ayant effectué la vente.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: product_id
+        description: Produit vendu.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: quantity
+        description: Quantité vendue.
+        data_tests:
+          - not_null
+
+      - name: unit_price
+        description: Prix unitaire appliqué.
+        data_tests:
+          - not_null
+
+      - name: discount_percentage
+        description: Pourcentage de remise appliqué.
+        data_tests:
+          - not_null
+
+      - name: total_amount
+        description: Montant total enregistré.
+        data_tests:
+          - not_null
+
+      - name: expected_total_amount
+        description: Montant recalculé à partir de la quantité, du prix et de la remise.
+        data_tests:
+          - not_null
+
+      - name: total_amount_difference
+        description: Écart entre le montant enregistré et le montant recalculé.
+        data_tests:
+          - not_null
+
+      - name: imported_at
+        description: Date d’importation dans PostgreSQL.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG INVENTORY
+  # =======================================================
+  - name: stg_inventory
+    description: >
+      Relevés de stock nettoyés avec calcul de la position de stock
+      et des indicateurs de rupture.
+
+    columns:
+      - name: inventory_id
+        description: Identifiant unique du relevé de stock.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Entreprise propriétaire du stock.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: inventory_date
+        description: Date du relevé de stock.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Magasin concerné par le relevé.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: product_id
+        description: Produit concerné par le relevé.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: stock_on_hand
+        description: Stock physiquement disponible.
+        data_tests:
+          - not_null
+
+      - name: quantity_on_order
+        description: Quantité déjà commandée.
+        data_tests:
+          - not_null
+
+      - name: backorders
+        description: Demande client non satisfaite.
+        data_tests:
+          - not_null
+
+      - name: inventory_position
+        description: >
+          Position de stock calculée comme stock disponible
+          plus quantité commandée moins backorders.
+        data_tests:
+          - not_null
+
+      - name: is_out_of_stock
+        description: Indique si le stock physique est nul.
+        data_tests:
+          - not_null
+
+      - name: has_backorders
+        description: Indique si des commandes clients sont en attente.
+        data_tests:
+          - not_null
+
+      - name: imported_at
+        description: Date d’importation dans PostgreSQL.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG PROMOTIONS
+  # =======================================================
+  - name: stg_promotions
+    description: Promotions nettoyées et enrichies avec leur durée.
+
+    columns:
+      - name: promotion_id
+        description: Identifiant unique de la promotion.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Entreprise concernée par la promotion.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: product_id
+        description: Produit concerné par la promotion.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: store_id
+        description: Magasin concerné par la promotion.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: start_date
+        description: Date de début de la promotion.
+        data_tests:
+          - not_null
+
+      - name: end_date
+        description: Date de fin de la promotion.
+        data_tests:
+          - not_null
+
+      - name: discount_percentage
+        description: Pourcentage de remise appliqué.
+        data_tests:
+          - not_null
+
+      - name: promotion_duration_days
+        description: Durée de la promotion en jours.
+        data_tests:
+          - not_null
+
+      - name: is_currently_active
+        description: Indique si la promotion est active à la date actuelle.
+        data_tests:
+          - not_null
+
+      - name: imported_at
+        description: Date d’importation dans PostgreSQL.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # STG PURCHASE ORDERS
+  # =======================================================
+  - name: stg_purchase_orders
+    description: >
+      Commandes fournisseurs nettoyées et enrichies avec les délais,
+      quantités restantes et indicateurs de livraison.
+
+    columns:
+      - name: purchase_order_id
+        description: Identifiant unique de la commande fournisseur.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Entreprise ayant émis la commande.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: tenant_id
+
+      - name: supplier_id
+        description: Fournisseur concerné par la commande.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_suppliers')
+                field: supplier_id
+
+      - name: product_id
+        description: Produit commandé.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+      - name: store_id
+        description: Magasin destinataire de la commande.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+      - name: order_date
+        description: Date de création de la commande.
+        data_tests:
+          - not_null
+
+      - name: expected_delivery_date
+        description: Date de livraison prévue.
+        data_tests:
+          - not_null
+
+      - name: actual_delivery_date
+        description: Date réelle de livraison.
+
+      - name: ordered_quantity
+        description: Quantité commandée.
+        data_tests:
+          - not_null
+
+      - name: received_quantity
+        description: Quantité reçue.
+        data_tests:
+          - not_null
+
+      - name: status
+        description: Statut normalisé de la commande fournisseur.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - open
+                  - received
+                  - partially_received
+                  - delayed
+                  - cancelled
+
+      - name: remaining_quantity
+        description: Quantité commandée qui reste à recevoir.
+        data_tests:
+          - not_null
+
+      - name: expected_lead_time_days
+        description: Délai de livraison prévu en jours.
+        data_tests:
+          - not_null
+
+      - name: actual_lead_time_days
+        description: Délai réel de livraison pour les commandes reçues.
+
+      - name: delivery_delay_days
+        description: Écart en jours entre la livraison réelle et prévue.
+
+      - name: received_percentage
+        description: Pourcentage de la quantité commandée effectivement reçue.
+        data_tests:
+          - not_null
+
+      - name: imported_at
+        description: Date d’importation dans PostgreSQL.
         data_tests:
           - not_null
