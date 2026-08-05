@@ -1,0 +1,486 @@
+version: 2
+
+models:
+  # =======================================================
+  # DIM PRODUCTS
+  # =======================================================
+  - name: dim_products
+    description: >
+      Dimension analytique contenant les informations produits,
+      les prix et les indicateurs de marge.
+
+    columns:
+      - name: product_id
+        description: Identifiant unique du produit.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+
+      - name: supplier_id
+        description: Fournisseur principal du produit.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_suppliers')
+                field: supplier_id
+
+      - name: sku
+        description: Référence métier du produit.
+        data_tests:
+          - not_null
+
+      - name: product_name
+        description: Nom du produit.
+        data_tests:
+          - not_null
+
+      - name: purchase_price
+        description: Prix d’achat unitaire.
+        data_tests:
+          - not_null
+
+      - name: selling_price
+        description: Prix de vente unitaire.
+        data_tests:
+          - not_null
+
+      - name: unit_margin
+        description: Marge unitaire estimée.
+        data_tests:
+          - not_null
+
+      - name: margin_rate_percentage
+        description: Taux de marge calculé par rapport au prix de vente.
+        data_tests:
+          - not_null
+
+      - name: lead_time_days
+        description: Délai de réapprovisionnement du produit.
+        data_tests:
+          - not_null
+
+      - name: minimum_order_quantity
+        description: Quantité minimale de commande.
+        data_tests:
+          - not_null
+
+      - name: active
+        description: Indique si le produit est actif.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # DIM STORES
+  # =======================================================
+  - name: dim_stores
+    description: Dimension analytique des magasins et dépôts.
+
+    columns:
+      - name: store_id
+        description: Identifiant unique du magasin.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Entreprise propriétaire du magasin.
+        data_tests:
+          - not_null
+
+      - name: store_code
+        description: Code métier du magasin.
+        data_tests:
+          - not_null
+
+      - name: store_name
+        description: Nom du magasin.
+        data_tests:
+          - not_null
+
+      - name: active
+        description: Indique si le magasin est actif.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # DIM SUPPLIERS
+  # =======================================================
+  - name: dim_suppliers
+    description: Dimension analytique des fournisseurs.
+
+    columns:
+      - name: supplier_id
+        description: Identifiant unique du fournisseur.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Entreprise propriétaire du fournisseur.
+        data_tests:
+          - not_null
+
+      - name: supplier_code
+        description: Code métier du fournisseur.
+        data_tests:
+          - not_null
+
+      - name: supplier_name
+        description: Nom du fournisseur.
+        data_tests:
+          - not_null
+
+      - name: average_lead_time_days
+        description: Délai moyen de livraison.
+        data_tests:
+          - not_null
+
+      - name: active
+        description: Indique si le fournisseur est actif.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # FACT DAILY SALES
+  # =======================================================
+  - name: fct_daily_sales
+    description: >
+      Table de faits des ventes quotidiennes par entreprise,
+      magasin et produit.
+
+    columns:
+      - name: daily_sales_key
+        description: Clé unique de la ligne de vente quotidienne.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+
+      - name: sale_date
+        description: Date des ventes agrégées.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Identifiant du magasin.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+
+      - name: product_id
+        description: Identifiant du produit.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+      - name: transaction_count
+        description: Nombre de transactions.
+        data_tests:
+          - not_null
+
+      - name: total_quantity_sold
+        description: Quantité totale vendue.
+        data_tests:
+          - not_null
+
+      - name: gross_revenue
+        description: Chiffre d’affaires avant remise.
+        data_tests:
+          - not_null
+
+      - name: total_discount_amount
+        description: Montant total des remises.
+        data_tests:
+          - not_null
+
+      - name: net_revenue
+        description: Chiffre d’affaires après remise.
+        data_tests:
+          - not_null
+
+      - name: estimated_cost_of_goods_sold
+        description: Coût d’achat estimé des produits vendus.
+        data_tests:
+          - not_null
+
+      - name: gross_margin
+        description: Marge brute estimée.
+        data_tests:
+          - not_null
+
+      - name: gross_margin_rate_percentage
+        description: Taux de marge brute.
+        data_tests:
+          - not_null
+
+  # =======================================================
+  # FACT INVENTORY DAILY
+  # =======================================================
+  - name: fct_inventory_daily
+    description: >
+      Table de faits des stocks quotidiens contenant les mouvements,
+      ruptures, commandes en cours et valorisations.
+
+    columns:
+      - name: inventory_snapshot_key
+        description: Clé unique du relevé journalier.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: inventory_id
+        description: Identifiant du relevé de stock.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+
+      - name: inventory_date
+        description: Date du relevé de stock.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Magasin concerné.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+
+      - name: product_id
+        description: Produit concerné.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+      - name: stock_on_hand
+        description: Stock physique disponible.
+        data_tests:
+          - not_null
+
+      - name: quantity_on_order
+        description: Quantité en cours de commande.
+        data_tests:
+          - not_null
+
+      - name: backorders
+        description: Quantité demandée mais non satisfaite.
+        data_tests:
+          - not_null
+
+      - name: inventory_position
+        description: Position globale du stock.
+        data_tests:
+          - not_null
+
+      - name: stock_value_at_cost
+        description: Valeur du stock au prix d’achat.
+        data_tests:
+          - not_null
+
+      - name: stock_value_at_retail
+        description: Valeur du stock au prix de vente.
+        data_tests:
+          - not_null
+
+      - name: inventory_position_value_at_cost
+        description: Valeur de la position de stock au prix d’achat.
+        data_tests:
+          - not_null
+
+      - name: is_out_of_stock
+        description: Indique si le produit est en rupture.
+        data_tests:
+          - not_null
+
+      - name: has_backorders
+        description: Indique la présence de commandes clients en attente.
+        data_tests:
+          - not_null
+            # =======================================================
+  # MART INVENTORY HEALTH
+  # =======================================================
+  - name: mart_inventory_health
+    description: >
+      État actuel des stocks par magasin et produit avec consommation
+      récente, couverture de stock, point de commande et recommandation
+      de réapprovisionnement.
+
+    columns:
+      - name: inventory_health_key
+        description: Clé unique du produit et magasin analysés.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: Date du dernier relevé de stock disponible.
+        data_tests:
+          - not_null
+
+      - name: store_id
+        description: Magasin concerné.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+
+      - name: product_id
+        description: Produit concerné.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+      - name: supplier_id
+        description: Fournisseur principal du produit.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_suppliers')
+                field: supplier_id
+
+      - name: stock_on_hand
+        description: Stock physique disponible.
+        data_tests:
+          - not_null
+
+      - name: inventory_position
+        description: Stock disponible augmenté des commandes et diminué des backorders.
+        data_tests:
+          - not_null
+
+      - name: quantity_sold_last_30_days
+        description: Quantité vendue pendant les 30 derniers jours de données.
+        data_tests:
+          - not_null
+
+      - name: average_daily_sales_30d
+        description: Vente quotidienne moyenne calculée sur 30 jours.
+        data_tests:
+          - not_null
+
+      - name: reorder_point_units
+        description: Quantité correspondant à la demande pendant le délai fournisseur.
+        data_tests:
+          - not_null
+
+      - name: recommended_order_quantity
+        description: Quantité recommandée pour le prochain réapprovisionnement.
+        data_tests:
+          - not_null
+
+      - name: inventory_health_status
+        description: Classification métier de l’état du stock.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - out_of_stock
+                  - backorder_risk
+                  - no_recent_sales
+                  - critical
+                  - low_stock
+                  - overstock
+                  - healthy
+
+  # =======================================================
+  # MART SUPPLIER PERFORMANCE
+  # =======================================================
+  - name: mart_supplier_performance
+    description: >
+      Tableau analytique de classement des fournisseurs selon les délais
+      de livraison et les quantités réellement reçues.
+
+    columns:
+      - name: supplier_performance_key
+        description: Clé unique de performance du fournisseur.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: tenant_id
+        description: Identifiant de l’entreprise.
+        data_tests:
+          - not_null
+
+      - name: supplier_id
+        description: Identifiant du fournisseur.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_suppliers')
+                field: supplier_id
+
+      - name: supplier_name
+        description: Nom du fournisseur.
+        data_tests:
+          - not_null
+
+      - name: total_purchase_orders
+        description: Nombre total de commandes fournisseur.
+        data_tests:
+          - not_null
+
+      - name: quantity_fulfillment_rate_percentage
+        description: Pourcentage des quantités commandées effectivement reçues.
+        data_tests:
+          - not_null
+
+      - name: supplier_score
+        description: Score global du fournisseur sur 100.
+        data_tests:
+          - not_null
+
+      - name: supplier_performance_tier
+        description: Classe de performance du fournisseur.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - excellent
+                  - good
+                  - needs_monitoring
+                  - critical
+
+      - name: supplier_rank
+        description: Rang du fournisseur dans son entreprise.
+        data_tests:
+          - not_null
