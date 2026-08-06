@@ -1,5 +1,33 @@
 services:
   # =======================================================
+  # Streamlit dashboard
+  # =======================================================
+  streamlit:
+    build:
+      context: .
+      dockerfile: streamlit/Dockerfile
+
+    container_name: stockpilot-streamlit
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: "${POSTGRES_DB}"
+      DB_USER: "${POSTGRES_USER}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
+
+    ports:
+      - "8501:8501"
+
+    volumes:
+      - ./streamlit:/app
+
+  # =======================================================
   # StockPilot application database
   # =======================================================
   postgres:
@@ -54,7 +82,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-   # =======================================================
+
+  # =======================================================
   # dbt transformations
   # =======================================================
   dbt:
@@ -80,7 +109,7 @@ services:
     working_dir: /usr/app/dbt
 
     volumes:
-      - ./dbt:/usr/app/dbt      
+      - ./dbt:/usr/app/dbt
 
   # =======================================================
   # Airflow local development service
@@ -96,6 +125,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
       airflow-db:
         condition: service_healthy
 
@@ -107,6 +137,7 @@ services:
       DBT_PASSWORD: "${POSTGRES_PASSWORD}"
       DBT_SCHEMA: staging
       DBT_PROFILES_DIR: /opt/stockpilot/dbt
+
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
         postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}
 
@@ -125,7 +156,7 @@ services:
       - "${AIRFLOW_PORT:-8080}:8080"
 
     volumes:
-      - ./dbt:/opt/stockpilot/dbt
+      - ./dbt:/opt/stockpilot/dbt:ro
       - airflow_home:/opt/airflow
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -141,5 +172,3 @@ volumes:
 
   airflow_home:
     name: stockpilot-airflow-home
-
-   

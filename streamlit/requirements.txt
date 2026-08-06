@@ -1,0 +1,5 @@
+streamlit==1.61.1
+pandas>=2.2,<3.0
+SQLAlchemy>=2.0,<3.0
+psycopg[binary]==3.3.4
+plotly>=6.0,<7.0
