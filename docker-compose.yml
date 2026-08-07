@@ -1,5 +1,57 @@
 services:
   # =======================================================
+  # Demand forecasting experiments
+  # =======================================================
+  forecasting:
+    build:
+      context: .
+      dockerfile: ml/forecasting/Dockerfile
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      mlflow:
+        condition: service_healthy
+
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: "${POSTGRES_DB}"
+      DB_USER: "${POSTGRES_USER}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
+
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      MLFLOW_EXPERIMENT_NAME: "stockpilot-demand-forecasting"
+
+    working_dir: /app
+
+    volumes:
+      - ./ml/forecasting:/app
+
+    profiles:
+      - ml
+  # =======================================================
+  # MLflow experiment tracking
+  # =======================================================
+  mlflow:
+    build:
+      context: .
+      dockerfile: mlflow/Dockerfile
+
+    container_name: stockpilot-mlflow
+    restart: unless-stopped
+    
+    environment:
+      MLFLOW_SERVER_ALLOWED_HOSTS: "localhost:*,127.0.0.1:*,mlflow:*"
+
+    ports:
+      - "5000:5000"
+
+    volumes:
+      - mlflow_data:/mlflow/data
+      - mlflow_artifacts:/mlflow/artifacts
+  # =======================================================
   # Streamlit dashboard
   # =======================================================
   streamlit:
@@ -172,3 +224,9 @@ volumes:
 
   airflow_home:
     name: stockpilot-airflow-home
+  
+  mlflow_data:
+    name: stockpilot-mlflow-data
+
+  mlflow_artifacts:
+    name: stockpilot-mlflow-artifacts
