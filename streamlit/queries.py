@@ -272,6 +272,7 @@ def load_sales_analytics_details() -> pd.DataFrame:
         return pd.read_sql(query, connection)
 @st.cache_data(ttl=60)
 def load_supplier_performance_details() -> pd.DataFrame:
+    
     """Load supplier performance scores and delivery indicators."""
 
     query = text(
@@ -315,3 +316,193 @@ def load_supplier_performance_details() -> pd.DataFrame:
 
     with engine.connect() as connection:
         return pd.read_sql(query, connection)
+@st.cache_data(ttl=60)
+def load_latest_demand_forecasts() -> pd.DataFrame:
+    """Load the latest completed recursive demand forecast."""
+
+    query = text(
+        """
+        with latest_run as (
+
+            select
+                forecast_run_id,
+                generated_at,
+                model_name,
+                model_version,
+                model_alias,
+                training_end_date,
+                forecast_start_date,
+                forecast_end_date,
+                horizon_days,
+                number_of_series
+
+            from ml.forecast_runs
+
+            where status = 'completed'
+
+            order by generated_at desc
+
+            limit 1
+        )
+
+        select
+            forecasts.forecast_run_id,
+            latest_run.generated_at,
+            latest_run.model_name,
+            latest_run.model_version,
+            latest_run.model_alias,
+            latest_run.training_end_date,
+            latest_run.forecast_start_date,
+            latest_run.forecast_end_date,
+            latest_run.horizon_days,
+
+            forecasts.forecast_date,
+            forecasts.horizon_day,
+
+            forecasts.tenant_id,
+            forecasts.store_id,
+
+            stores.store_code,
+            stores.store_name,
+            stores.city,
+            stores.region,
+
+            forecasts.product_id,
+
+            products.sku,
+            products.product_name,
+            products.category_name,
+            products.supplier_id,
+            products.purchase_price,
+            products.selling_price,
+
+            forecasts.predicted_quantity,
+
+            inventory.stock_on_hand,
+            inventory.quantity_on_order,
+            inventory.backorders,
+            inventory.inventory_position,
+            inventory.days_of_stock,
+            inventory.recommended_order_quantity,
+            inventory.inventory_health_status
+
+        from latest_run
+
+        inner join ml.demand_forecasts as forecasts
+            on forecasts.forecast_run_id =
+               latest_run.forecast_run_id
+
+        left join analytics.dim_stores as stores
+            on forecasts.store_id = stores.store_id
+            and forecasts.tenant_id = stores.tenant_id
+
+        left join analytics.dim_products as products
+            on forecasts.product_id = products.product_id
+            and forecasts.tenant_id = products.tenant_id
+
+        left join analytics.mart_inventory_health as inventory
+            on forecasts.product_id = inventory.product_id
+            and forecasts.store_id = inventory.store_id
+            and forecasts.tenant_id = inventory.tenant_id
+
+        order by
+            forecasts.forecast_date,
+            stores.store_name,
+            products.product_name
+        """
+    )
+
+    engine = get_engine()
+
+    with engine.connect() as connection:
+        return pd.read_sql(query, connection)
+@st.cache_data(ttl=60)
+def load_latest_replenishment_recommendations() -> pd.DataFrame:
+    """Load optimized replenishment recommendations for latest forecast."""
+
+    query = text(
+        """
+        with latest_run as (
+            select forecast_run_id
+            from ml.forecast_runs
+            where status = 'completed'
+            order by generated_at desc
+            limit 1
+        )
+
+        select
+            recommendations.recommendation_id,
+            recommendations.forecast_run_id,
+
+            recommendations.tenant_id,
+            recommendations.store_id,
+
+            stores.store_code,
+            stores.store_name,
+
+            recommendations.product_id,
+
+            products.sku,
+            products.product_name,
+            products.category_name,
+
+            recommendations.forecast_30d,
+            recommendations.forecast_lead_time,
+            recommendations.lead_time_days,
+
+            recommendations.safety_stock_units,
+
+            recommendations.stock_on_hand,
+            recommendations.quantity_on_order,
+            recommendations.backorders,
+            recommendations.inventory_position,
+
+            recommendations.target_stock_units,
+            recommendations.net_requirement_units,
+
+            recommendations.minimum_order_quantity,
+            recommendations.package_size,
+
+            recommendations.recommended_order_quantity,
+
+            recommendations.estimated_stockout_date,
+            recommendations.urgency_level
+
+        from ml.replenishment_recommendations
+            as recommendations
+
+        inner join latest_run
+            on recommendations.forecast_run_id =
+               latest_run.forecast_run_id
+
+        left join analytics.dim_stores as stores
+            on recommendations.store_id =
+               stores.store_id
+            and recommendations.tenant_id =
+                stores.tenant_id
+
+        left join analytics.dim_products as products
+            on recommendations.product_id =
+               products.product_id
+            and recommendations.tenant_id =
+                products.tenant_id
+
+        order by
+            case recommendations.urgency_level
+                when 'critical' then 1
+                when 'high' then 2
+                when 'medium' then 3
+                when 'planned' then 4
+                else 5
+            end,
+            recommendations.recommended_order_quantity desc
+        """
+    )
+
+    engine = get_engine()
+
+    with engine.connect() as connection:
+        return pd.read_sql(
+            query,
+            connection,
+        )
