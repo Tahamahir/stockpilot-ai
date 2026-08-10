@@ -180,6 +180,9 @@ services:
 
       airflow-db:
         condition: service_healthy
+      
+      mlflow:
+        condition: service_healthy
 
     environment:
       DBT_HOST: postgres
@@ -189,6 +192,15 @@ services:
       DBT_PASSWORD: "${POSTGRES_PASSWORD}"
       DBT_SCHEMA: staging
       DBT_PROFILES_DIR: /opt/stockpilot/dbt
+
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: "${POSTGRES_DB}"
+      DB_USER: "${POSTGRES_USER}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
+
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      MLFLOW_EXPERIMENT_NAME: "stockpilot-demand-forecasting"
 
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
         postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}
@@ -201,6 +213,7 @@ services:
 
       AIRFLOW_CONN_STOCKPILOT_POSTGRES: >-
         postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      
 
     command: standalone
 
@@ -214,6 +227,7 @@ services:
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./data:/opt/stockpilot/data:ro
+      - ./ml/forecasting:/opt/stockpilot/ml/forecasting:ro
 
 volumes:
   postgres_data:
