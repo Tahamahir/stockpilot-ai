@@ -105,17 +105,25 @@ services:
   # =======================================================
   # Streamlit dashboard
   # =======================================================
+    # =======================================================
+  # Streamlit dashboard
+  # =======================================================
+
   streamlit:
     build:
       context: .
       dockerfile: streamlit/Dockerfile
 
     container_name: stockpilot-streamlit
+
     restart: unless-stopped
 
     depends_on:
       postgres:
         condition: service_healthy
+
+      assistant-api:
+        condition: service_started
 
     environment:
       DB_HOST: postgres
@@ -123,6 +131,8 @@ services:
       DB_NAME: "${POSTGRES_DB}"
       DB_USER: "${POSTGRES_USER}"
       DB_PASSWORD: "${POSTGRES_PASSWORD}"
+
+      ASSISTANT_API_URL: "http://assistant-api:8000"
 
     ports:
       - "8501:8501"

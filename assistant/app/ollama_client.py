@@ -38,12 +38,32 @@ OLLAMA_TIMEOUT = httpx.Timeout(
 
 
 # =========================================================
+# Business labels
+# =========================================================
+
+URGENCY_LABELS = {
+    "critical": "Critique",
+    "high": "Élevée",
+    "medium": "Moyenne",
+    "planned": "Planifiée",
+    "no_order": "Aucune commande",
+}
+
+
+SUPPLIER_TIER_LABELS = {
+    "excellent": "Excellent",
+    "good": "Bon",
+    "needs_monitoring": "À surveiller",
+    "critical": "Critique",
+}
+
+
+# =========================================================
 # Structured routing schema
 # =========================================================
 
 ROUTE_SCHEMA = {
     "type": "object",
-
     "properties": {
         "tool": {
             "type": "string",
@@ -56,24 +76,19 @@ ROUTE_SCHEMA = {
                 "none",
             ],
         },
-
         "limit": {
             "type": "integer",
         },
-
         "urgency": {
             "type": "string",
         },
-
         "sku": {
             "type": "string",
         },
-
         "store_name": {
             "type": "string",
         },
     },
-
     "required": [
         "tool",
         "limit",
@@ -127,10 +142,8 @@ def test_ollama_connection() -> dict:
     return {
         "status": "ok",
         "model": OLLAMA_MODEL,
-        "available":
-            OLLAMA_MODEL in models,
-        "installed_models":
-            models,
+        "available": OLLAMA_MODEL in models,
+        "installed_models": models,
     }
 
 
@@ -144,7 +157,11 @@ def format_number_fr(
 ) -> str:
     try:
         number = float(value)
-    except (TypeError, ValueError):
+
+    except (
+        TypeError,
+        ValueError,
+    ):
         number = 0.0
 
     formatted = (
@@ -156,6 +173,56 @@ def format_number_fr(
         .replace(",", " ")
         .replace(".", ",")
     )
+
+
+def localize_business_terms(
+    content: str,
+) -> str:
+    """
+    Translate business status labels that Qwen may
+    occasionally return in English.
+    """
+
+    if not content:
+        return ""
+
+    replacements = {
+        "priorité critical":
+            "priorité Critique",
+
+        "priorité high":
+            "priorité Élevée",
+
+        "priorité medium":
+            "priorité Moyenne",
+
+        "priorité planned":
+            "priorité Planifiée",
+
+        "priority critical":
+            "priorité Critique",
+
+        "priority high":
+            "priorité Élevée",
+
+        "priority medium":
+            "priorité Moyenne",
+
+        "priority planned":
+            "priorité Planifiée",
+    }
+
+    localized = content
+
+    for source, target in replacements.items():
+        localized = re.sub(
+            re.escape(source),
+            target,
+            localized,
+            flags=re.IGNORECASE,
+        )
+
+    return localized
 
 
 # =========================================================
@@ -293,6 +360,7 @@ def apply_deterministic_guards(
                 50,
             ),
         )
+
     except (
         TypeError,
         ValueError,
@@ -412,12 +480,17 @@ def apply_deterministic_guards(
             "get_sales_performance"
         )
 
+    # =====================================================
+    # Suppliers
+    # =====================================================
+
     elif any(
         keyword in lower_message
         for keyword in (
             "fournisseur",
             "fournisseurs",
             "supplier",
+            "suppliers",
             "livraison fournisseur",
             "livraisons fournisseur",
             "retard fournisseur",
@@ -429,11 +502,14 @@ def apply_deterministic_guards(
             "taux de livraison",
             "taux de fulfillment",
             "taux de service fournisseur",
+            "problèmes de livraison",
+            "problemes de livraison",
         )
     ):
         route["tool"] = (
             "get_supplier_performance"
         )
+
     # =====================================================
     # Inventory
     # =====================================================
@@ -460,7 +536,7 @@ def apply_deterministic_guards(
     # =====================================================
     # Explicit urgency
     #
-    # "les plus urgents" != critical
+    # "les plus urgents" DOES NOT mean critical only.
     # =====================================================
 
     route["urgency"] = ""
@@ -533,17 +609,18 @@ def apply_deterministic_guards(
         route["urgency"] = "planned"
 
     # =====================================================
-    # Explicit numeric limit
+    # Numeric limit
     #
     # Examples:
-    # "5 produits les plus vendus"
-    # "3 recommandations urgentes"
+    # - 5 produits les plus vendus
+    # - 3 recommandations
+    # - 3 fournisseurs
     # =====================================================
 
     if route["tool"] in {
         "get_replenishment_priorities",
         "get_sales_performance",
-        "get_supplier_performance"
+        "get_supplier_performance",
     }:
         limit_match = re.search(
             r"\b(\d{1,2})\b",
@@ -565,7 +642,7 @@ def apply_deterministic_guards(
 
 
 # =========================================================
-# LLM router
+# LLM Router
 # =========================================================
 
 def route_user_request(
@@ -577,9 +654,10 @@ Tu es uniquement le routeur sécurisé de StockPilot AI.
 Tu ne dois jamais répondre à la question métier.
 Tu dois seulement sélectionner le tool approprié.
 
+
 1. get_inventory_summary
 
-Pour :
+Utiliser pour :
 - état global du stock
 - stock actuel
 - rupture de stock
@@ -590,7 +668,7 @@ Pour :
 
 2. get_replenishment_priorities
 
-Pour :
+Utiliser pour :
 - quoi commander
 - produits à commander
 - produits urgents
@@ -606,8 +684,9 @@ par ordre de priorité.
 
 Cela NE signifie PAS urgency="critical".
 
-urgency doit être renseigné uniquement si l'utilisateur
-demande explicitement un niveau précis :
+urgency doit être renseigné uniquement lorsque
+l'utilisateur demande explicitement un niveau précis :
+
 critical
 high
 medium
@@ -616,16 +695,17 @@ planned
 
 3. get_product_forecast
 
-Pour :
+Utiliser pour :
 - forecast d'un SKU
 - prévision de demande
 - demande prévue sur 30 jours
 - prévision d'un produit précis
+- prévision produit par magasin
 
 
 4. get_sales_performance
 
-Pour :
+Utiliser pour :
 - chiffre d'affaires
 - ventes
 - revenu
@@ -639,10 +719,26 @@ Pour :
 - magasin réalisant le plus de chiffre d'affaires
 
 
-5. none
+5. get_supplier_performance
 
-Seulement si la question ne nécessite aucune donnée
-StockPilot.
+Utiliser pour :
+- fournisseurs
+- meilleur fournisseur
+- meilleurs fournisseurs
+- fournisseurs les moins performants
+- problèmes de livraison
+- retards fournisseurs
+- taux de livraison à temps
+- taux de fulfillment
+- score fournisseur
+- performance fournisseur
+
+
+6. none
+
+Seulement lorsque la question ne nécessite
+aucune donnée StockPilot.
+
 
 RÈGLES :
 
@@ -657,23 +753,31 @@ store_name = "" si aucun magasin précis.
     try:
         payload = call_ollama(
             {
-                "model": OLLAMA_MODEL,
+                "model":
+                    OLLAMA_MODEL,
 
                 "messages": [
                     {
-                        "role": "system",
+                        "role":
+                            "system",
+
                         "content":
                             router_prompt,
                     },
                     {
-                        "role": "user",
+                        "role":
+                            "user",
+
                         "content":
                             user_message,
                     },
                 ],
 
-                "stream": False,
-                "think": False,
+                "stream":
+                    False,
+
+                "think":
+                    False,
 
                 "format":
                     ROUTE_SCHEMA,
@@ -682,8 +786,11 @@ store_name = "" si aucun magasin précis.
                     "30m",
 
                 "options": {
-                    "temperature": 0,
-                    "num_predict": 120,
+                    "temperature":
+                        0,
+
+                    "num_predict":
+                        120,
                 },
             }
         )
@@ -738,6 +845,10 @@ def execute_route(
         "tool"
     ]
 
+    # =====================================================
+    # Inventory
+    # =====================================================
+
     if (
         tool_name
         == "get_inventory_summary"
@@ -747,6 +858,10 @@ def execute_route(
         result = (
             get_inventory_summary()
         )
+
+    # =====================================================
+    # Replenishment
+    # =====================================================
 
     elif (
         tool_name
@@ -769,6 +884,10 @@ def execute_route(
                 **arguments
             )
         )
+
+    # =====================================================
+    # Forecast
+    # =====================================================
 
     elif (
         tool_name
@@ -805,6 +924,10 @@ def execute_route(
             )
         )
 
+    # =====================================================
+    # Sales
+    # =====================================================
+
     elif (
         tool_name
         == "get_sales_performance"
@@ -819,6 +942,11 @@ def execute_route(
                 **arguments
             )
         )
+
+    # =====================================================
+    # Suppliers
+    # =====================================================
+
     elif (
         tool_name
         == "get_supplier_performance"
@@ -833,6 +961,7 @@ def execute_route(
                 **arguments
             )
         )
+
     else:
         return {}, {}
 
@@ -888,6 +1017,13 @@ def fallback_business_answer(
             )
         )
 
+        overstock = int(
+            tool_result.get(
+                "overstock_count",
+                0,
+            )
+        )
+
         stock_value = (
             format_number_fr(
                 tool_result.get(
@@ -901,8 +1037,9 @@ def fallback_business_answer(
             "État actuel du stock : "
             f"{critical} critique(s), "
             f"{out_of_stock} en rupture, "
-            f"{low_stock} à stock faible et "
-            f"{healthy} en bonne santé. "
+            f"{low_stock} à stock faible, "
+            f"{healthy} en bonne santé et "
+            f"{overstock} en surstock. "
             f"La valeur du stock au coût est de "
             f"{stock_value} MAD."
         )
@@ -957,12 +1094,27 @@ def fallback_business_answer(
                 or "non estimée"
             )
 
+            urgency_level = (
+                item.get(
+                    "urgency_level",
+                    "",
+                )
+            )
+
+            urgency_label = (
+                URGENCY_LABELS.get(
+                    urgency_level,
+                    urgency_level,
+                )
+                or "N/A"
+            )
+
             lines.append(
                 f"{index}. "
                 f"{item.get('sku', 'N/A')} — "
                 f"{item.get('product_name', 'N/A')} — "
                 f"{item.get('store_name', 'N/A')} : "
-                f"priorité {item.get('urgency_level', 'N/A')}, "
+                f"priorité {urgency_label}, "
                 f"{quantity} unités recommandées, "
                 f"rupture estimée le {stockout_date}."
             )
@@ -1176,7 +1328,8 @@ def fallback_business_answer(
                     f"{index}. "
                     f"{product.get('sku', 'N/A')} — "
                     f"{product.get('product_name', 'N/A')} : "
-                    f"{quantity} unités vendues."
+                    f"{quantity:,} unités vendues."
+                    .replace(",", " ")
                 )
 
             return "\n".join(
@@ -1342,13 +1495,16 @@ def fallback_business_answer(
         return (
             "Performance commerciale :\n"
             f"- Chiffre d'affaires : {revenue} MAD\n"
-            f"- Quantité vendue : {quantity} unités\n"
-            f"- Transactions : {transactions}\n"
+            f"- Quantité vendue : "
+            f"{quantity:,} unités\n"
+            f"- Transactions : "
+            f"{transactions:,}\n"
             f"- Panier moyen : {basket} MAD\n"
             f"- Marge brute : {margin} MAD "
             f"({margin_rate} %)"
-        )
-        # =====================================================
+        ).replace(",", " ")
+
+    # =====================================================
     # Suppliers
     # =====================================================
 
@@ -1376,7 +1532,7 @@ def fallback_business_answer(
         )
 
         # -------------------------------------------------
-        # Delivery problems / worst suppliers
+        # Delivery problems / suppliers at risk
         # -------------------------------------------------
 
         if any(
@@ -1403,8 +1559,10 @@ def fallback_business_answer(
                 )
 
             lines = [
-                "Fournisseurs présentant le plus "
-                "de problèmes de livraison :"
+                (
+                    "Fournisseurs présentant le plus "
+                    "de problèmes de livraison :"
+                )
             ]
 
             for index, supplier in enumerate(
@@ -1439,25 +1597,47 @@ def fallback_business_answer(
                     )
                 )
 
+                tier = (
+                    supplier.get(
+                        "supplier_performance_tier",
+                        "",
+                    )
+                )
+
+                tier_label = (
+                    SUPPLIER_TIER_LABELS.get(
+                        tier,
+                        tier,
+                    )
+                    or "N/A"
+                )
+
                 lines.append(
                     f"{index}. "
                     f"{supplier.get('supplier_name', 'N/A')} "
                     f"({supplier.get('supplier_code', 'N/A')}) : "
-                    f"{on_time_rate:.2f} % de livraisons à temps, "
+                    f"{format_number_fr(on_time_rate)} % "
+                    f"de livraisons à temps, "
                     f"{late} livraisons en retard, "
-                    f"{delay:.2f} jours de retard moyen, "
-                    f"score {score:.2f}/100."
+                    f"{format_number_fr(delay)} jours "
+                    f"de retard moyen, "
+                    f"score {format_number_fr(score)}/100, "
+                    f"niveau {tier_label}."
                 )
 
-            return "\n".join(lines)
+            return "\n".join(
+                lines
+            )
 
         # -------------------------------------------------
         # Best suppliers
         # -------------------------------------------------
 
         if (
-            "meilleur fournisseur" in lower_message
-            or "meilleurs fournisseurs" in lower_message
+            "meilleur fournisseur"
+            in lower_message
+            or "meilleurs fournisseurs"
+            in lower_message
         ):
             if not best_suppliers:
                 return (
@@ -1494,16 +1674,35 @@ def fallback_business_answer(
                     )
                 )
 
+                tier = (
+                    supplier.get(
+                        "supplier_performance_tier",
+                        "",
+                    )
+                )
+
+                tier_label = (
+                    SUPPLIER_TIER_LABELS.get(
+                        tier,
+                        tier,
+                    )
+                    or "N/A"
+                )
+
                 lines.append(
                     f"{index}. "
                     f"{supplier.get('supplier_name', 'N/A')} "
                     f"({supplier.get('supplier_code', 'N/A')}) : "
-                    f"score {score:.2f}/100, "
-                    f"{on_time:.2f} % à temps, "
-                    f"{fulfillment:.2f} % de fulfillment."
+                    f"score {format_number_fr(score)}/100, "
+                    f"{format_number_fr(on_time)} % à temps, "
+                    f"{format_number_fr(fulfillment)} % "
+                    f"de fulfillment, "
+                    f"niveau {tier_label}."
                 )
 
-            return "\n".join(lines)
+            return "\n".join(
+                lines
+            )
 
         # -------------------------------------------------
         # Global supplier summary
@@ -1546,14 +1745,15 @@ def fallback_business_answer(
 
         return (
             f"Vous avez {supplier_count} fournisseurs. "
-            f"Le score moyen est de {average_score:.2f}/100, "
+            f"Le score moyen est de "
+            f"{format_number_fr(average_score)}/100, "
             f"le taux moyen de livraison à temps est de "
-            f"{on_time:.2f} %, "
+            f"{format_number_fr(on_time)} %, "
             f"le taux de fulfillment est de "
-            f"{fulfillment:.2f} % "
-            f"et {late} livraisons en retard "
+            f"{format_number_fr(fulfillment)} % "
+            f"et {late:,} livraisons en retard "
             f"ont été enregistrées."
-        )
+        ).replace(",", " ")
 
     return (
         "Les données ont bien été récupérées, "
@@ -1592,6 +1792,7 @@ Règles absolues :
 - N'invente aucun produit.
 - N'invente aucun SKU.
 - N'invente aucun magasin.
+- N'invente aucun fournisseur.
 - N'invente aucune quantité.
 - N'invente aucune prévision.
 - N'invente aucune date.
@@ -1600,6 +1801,22 @@ Règles absolues :
 - N'invente aucun chiffre d'affaires.
 
 La devise StockPilot est MAD pour les valeurs monétaires.
+
+Les niveaux d'urgence doivent être présentés en français :
+
+critical = Critique
+high = Élevée
+medium = Moyenne
+planned = Planifiée
+no_order = Aucune commande
+
+Pour les nombres décimaux en français,
+utilise une virgule comme séparateur décimal.
+
+Exemple :
+846,77
+et non
+846.77
 
 N'explique jamais ton raisonnement interne.
 
@@ -1695,7 +1912,9 @@ et ne crée jamais automatiquement une commande.
             user_message=user_message,
         )
 
-    return cleaned
+    return localize_business_terms(
+        cleaned
+    )
 
 
 # =========================================================
@@ -1767,8 +1986,11 @@ def generate_generic_answer(
         content
     )
 
-    if contains_reasoning_leak(
-        cleaned
+    if (
+        not cleaned
+        or contains_reasoning_leak(
+            cleaned
+        )
     ):
         return (
             "Je peux vous aider à analyser "
