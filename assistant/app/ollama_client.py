@@ -10,6 +10,8 @@ from app.business_tools import (
     get_inventory_summary,
     get_product_forecast,
     get_replenishment_priorities,
+    get_sales_performance,
+    get_supplier_performance,
 )
 
 
@@ -41,6 +43,7 @@ OLLAMA_TIMEOUT = httpx.Timeout(
 
 ROUTE_SCHEMA = {
     "type": "object",
+
     "properties": {
         "tool": {
             "type": "string",
@@ -48,22 +51,29 @@ ROUTE_SCHEMA = {
                 "get_inventory_summary",
                 "get_replenishment_priorities",
                 "get_product_forecast",
+                "get_sales_performance",
+                "get_supplier_performance",
                 "none",
             ],
         },
+
         "limit": {
             "type": "integer",
         },
+
         "urgency": {
             "type": "string",
         },
+
         "sku": {
             "type": "string",
         },
+
         "store_name": {
             "type": "string",
         },
     },
+
     "required": [
         "tool",
         "limit",
@@ -117,9 +127,35 @@ def test_ollama_connection() -> dict:
     return {
         "status": "ok",
         "model": OLLAMA_MODEL,
-        "available": OLLAMA_MODEL in models,
-        "installed_models": models,
+        "available":
+            OLLAMA_MODEL in models,
+        "installed_models":
+            models,
     }
+
+
+# =========================================================
+# Formatting
+# =========================================================
+
+def format_number_fr(
+    value,
+    decimals: int = 2,
+) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = 0.0
+
+    formatted = (
+        f"{number:,.{decimals}f}"
+    )
+
+    return (
+        formatted
+        .replace(",", " ")
+        .replace(".", ",")
+    )
 
 
 # =========================================================
@@ -134,14 +170,12 @@ def clean_model_answer(
 
     cleaned = content.strip()
 
-    # Complete thinking block
     cleaned = re.sub(
         r"(?is)<think>.*?</think>",
         "",
         cleaned,
     ).strip()
 
-    # Thinking leaked before closing tag
     if "</think>" in cleaned:
         cleaned = (
             cleaned
@@ -153,13 +187,19 @@ def clean_model_answer(
         )
 
     return cleaned
+
+
 def contains_reasoning_leak(
     content: str,
 ) -> bool:
     if not content:
         return True
 
-    lowered = content.strip().lower()
+    lowered = (
+        content
+        .strip()
+        .lower()
+    )
 
     suspicious_starts = (
         "okay,",
@@ -171,7 +211,7 @@ def contains_reasoning_leak(
         "we need",
         "i need to",
         "the user",
-        "looking at the data",
+        "looking at",
     )
 
     if lowered.startswith(
@@ -186,6 +226,8 @@ def contains_reasoning_leak(
         "the tool executed was",
         "let me check",
         "the response has",
+        "i should",
+        "i need",
     )
 
     return any(
@@ -194,227 +236,6 @@ def contains_reasoning_leak(
     )
 
 
-def fallback_business_answer(
-    tool_name: str,
-    tool_result: dict,
-) -> str:
-    """
-    Deterministic fallback.
-
-    It uses only verified backend data.
-    No LLM-generated values.
-    """
-
-    if (
-        tool_name
-        == "get_inventory_summary"
-    ):
-        return (
-            "État actuel du stock : "
-            f"{tool_result.get('critical_count', 0)} critique(s), "
-            f"{tool_result.get('out_of_stock_count', 0)} "
-            "en rupture, "
-            f"{tool_result.get('low_stock_count', 0)} "
-            "à stock faible et "
-            f"{tool_result.get('healthy_count', 0)} "
-            "en bonne santé. "
-            "La valeur du stock au coût est de "
-            f"{tool_result.get('stock_value_at_cost', 0):,.2f} MAD."
-        ).replace(",", " ")
-
-    if (
-        tool_name
-        == "get_replenishment_priorities"
-    ):
-        recommendations = (
-            tool_result.get(
-                "recommendations",
-                [],
-            )
-        )
-
-        if not recommendations:
-            return (
-                "Aucune recommandation de "
-                "réapprovisionnement correspondant "
-                "aux critères demandés n'a été trouvée."
-            )
-
-        lines = [
-            "Priorités de réapprovisionnement ML :"
-        ]
-
-        for index, item in enumerate(
-            recommendations,
-            start=1,
-        ):
-            quantity = item.get(
-                "recommended_order_quantity",
-                0,
-            )
-
-            if isinstance(
-                quantity,
-                float,
-            ) and quantity.is_integer():
-                quantity = int(quantity)
-
-            stockout_date = (
-                item.get(
-                    "estimated_stockout_date"
-                )
-                or "non estimée"
-            )
-
-            lines.append(
-                f"{index}. "
-                f"{item.get('sku', 'N/A')} — "
-                f"{item.get('product_name', 'N/A')} — "
-                f"{item.get('store_name', 'N/A')} : "
-                f"priorité {item.get('urgency_level', 'N/A')}, "
-                f"{quantity} unités recommandées, "
-                f"rupture estimée le {stockout_date}."
-            )
-
-        lines.append(
-            "Ces recommandations ML sont des aides "
-            "à la décision et ne déclenchent pas "
-            "automatiquement une commande."
-        )
-
-        return "\n".join(lines)
-
-    if (
-    tool_name
-    == "get_product_forecast"
-    ):
-        if not tool_result.get(
-            "found",
-            False,
-        ):
-            return (
-                "Aucune prévision n'a été trouvée "
-                "pour le SKU et le magasin demandés."
-            )
-
-        sku = tool_result.get(
-            "sku",
-                "N/A",
-        )
-
-        product_name = tool_result.get(
-            "product_name",
-            "Produit inconnu",
-        )
-
-        total = float(
-            tool_result.get(
-                "forecast_total",
-                0,
-            )
-        )
-
-        forecast_start_date = (
-            tool_result.get(
-                "forecast_start_date",
-                "N/A",
-            )
-        )
-
-        forecast_end_date = (
-            tool_result.get(
-                "forecast_end_date",
-                "N/A",
-            )
-        )
-
-        horizon_days = (
-            tool_result.get(
-                "horizon_days",
-                30,
-            )
-        )
-
-        stores = tool_result.get(
-            "stores",
-            [],
-        )
-
-        # =====================================================
-        # One matching store
-        # =====================================================
-
-        if len(stores) == 1:
-            store_name = stores[0].get(
-                "store_name",
-                "Magasin inconnu",
-            )
-
-            store_total = float(
-                stores[0].get(
-                    "forecast_total",
-                    total,
-                )
-            )
-
-            return (
-                f"La demande prévue pour {sku} "
-                f"({product_name}) au {store_name} "
-                f"est de {store_total:.2f} unités "
-                f"sur {horizon_days} jours, "
-                f"du {forecast_start_date} "
-                f"au {forecast_end_date}."
-            )
-
-    # =====================================================
-    # Several stores
-    # =====================================================
-
-    if len(stores) > 1:
-        lines = [
-            (
-                f"La demande totale prévue pour "
-                f"{sku} ({product_name}) est de "
-                f"{total:.2f} unités sur "
-                f"{horizon_days} jours."
-            )
-        ]
-
-        for store in stores:
-            store_name = store.get(
-                "store_name",
-                "Magasin inconnu",
-            )
-
-            store_total = float(
-                store.get(
-                    "forecast_total",
-                    0,
-                )
-            )
-
-            lines.append(
-                f"- {store_name} : "
-                f"{store_total:.2f} unités"
-            )
-
-        lines.append(
-            (
-                f"Période : "
-                f"{forecast_start_date} "
-                f"au {forecast_end_date}."
-            )
-        )
-
-        return "\n".join(
-            lines
-        )
-
-    return (
-        f"La demande prévue pour {sku} "
-        f"est de {total:.2f} unités "
-        f"sur {horizon_days} jours."
-    )
 # =========================================================
 # Default route
 # =========================================================
@@ -430,28 +251,34 @@ def default_route() -> dict:
 
 
 # =========================================================
-# Deterministic routing guards
+# Deterministic routing
 # =========================================================
 
 def apply_deterministic_guards(
     user_message: str,
     route: dict,
 ) -> dict:
-    lower_message = user_message.lower()
-
-    # -----------------------------------------------------
-    # Normalize
-    # -----------------------------------------------------
+    lower_message = (
+        user_message.lower()
+    )
 
     allowed_tools = {
         "get_inventory_summary",
         "get_replenishment_priorities",
         "get_product_forecast",
+        "get_sales_performance",
+        "get_supplier_performance",
         "none",
     }
 
-    if route.get("tool") not in allowed_tools:
+    if route.get(
+        "tool"
+    ) not in allowed_tools:
         route["tool"] = "none"
+
+    # =====================================================
+    # Normalize limit
+    # =====================================================
 
     try:
         route["limit"] = max(
@@ -466,7 +293,10 @@ def apply_deterministic_guards(
                 50,
             ),
         )
-    except (TypeError, ValueError):
+    except (
+        TypeError,
+        ValueError,
+    ):
         route["limit"] = 10
 
     route["urgency"] = str(
@@ -494,7 +324,7 @@ def apply_deterministic_guards(
     ).strip()
 
     # =====================================================
-    # SKU
+    # SKU / Forecast
     # =====================================================
 
     sku_match = re.search(
@@ -547,6 +377,64 @@ def apply_deterministic_guards(
         )
 
     # =====================================================
+    # Sales
+    # =====================================================
+
+    elif any(
+        keyword in lower_message
+        for keyword in (
+            "chiffre d'affaires",
+            "chiffre d’affaires",
+            "ca total",
+            "revenu",
+            "revenus",
+            "vente",
+            "ventes",
+            "vendu",
+            "vendus",
+            "vendue",
+            "vendues",
+            "plus vendu",
+            "plus vendus",
+            "meilleures ventes",
+            "top produit",
+            "top produits",
+            "panier moyen",
+            "marge",
+            "transactions",
+            "meilleur magasin",
+            "meilleurs magasins",
+            "magasin réalise",
+            "magasin realise",
+        )
+    ):
+        route["tool"] = (
+            "get_sales_performance"
+        )
+
+    elif any(
+        keyword in lower_message
+        for keyword in (
+            "fournisseur",
+            "fournisseurs",
+            "supplier",
+            "livraison fournisseur",
+            "livraisons fournisseur",
+            "retard fournisseur",
+            "retards fournisseur",
+            "meilleur fournisseur",
+            "meilleurs fournisseurs",
+            "performance fournisseur",
+            "performance des fournisseurs",
+            "taux de livraison",
+            "taux de fulfillment",
+            "taux de service fournisseur",
+        )
+    ):
+        route["tool"] = (
+            "get_supplier_performance"
+        )
+    # =====================================================
     # Inventory
     # =====================================================
 
@@ -572,12 +460,7 @@ def apply_deterministic_guards(
     # =====================================================
     # Explicit urgency
     #
-    # IMPORTANT:
-    # "les plus urgents" DOES NOT mean
-    # urgency = critical.
-    #
-    # We apply an urgency filter only when the user
-    # explicitly requests one severity.
+    # "les plus urgents" != critical
     # =====================================================
 
     route["urgency"] = ""
@@ -650,13 +533,18 @@ def apply_deterministic_guards(
         route["urgency"] = "planned"
 
     # =====================================================
-    # Explicit limit
+    # Explicit numeric limit
+    #
+    # Examples:
+    # "5 produits les plus vendus"
+    # "3 recommandations urgentes"
     # =====================================================
 
-    if (
-        route["tool"]
-        == "get_replenishment_priorities"
-    ):
+    if route["tool"] in {
+        "get_replenishment_priorities",
+        "get_sales_performance",
+        "get_supplier_performance"
+    }:
         limit_match = re.search(
             r"\b(\d{1,2})\b",
             user_message,
@@ -677,7 +565,7 @@ def apply_deterministic_guards(
 
 
 # =========================================================
-# LLM Router
+# LLM router
 # =========================================================
 
 def route_user_request(
@@ -687,61 +575,81 @@ def route_user_request(
 Tu es uniquement le routeur sécurisé de StockPilot AI.
 
 Tu ne dois jamais répondre à la question métier.
-Tu dois uniquement sélectionner le tool approprié.
-
-TOOLS :
+Tu dois seulement sélectionner le tool approprié.
 
 1. get_inventory_summary
-Utiliser pour :
+
+Pour :
 - état global du stock
 - stock actuel
 - rupture de stock
-- faible stock
+- stock faible
 - stock critique
 - valeur du stock
 
+
 2. get_replenishment_priorities
-Utiliser pour :
+
+Pour :
 - quoi commander
 - produits à commander
-- produits les plus urgents
+- produits urgents
 - priorités de commande
 - recommandations ML
 - plan de réapprovisionnement
 - risque de rupture
-- commandes recommandées
 
 IMPORTANT :
+
 "les plus urgents" signifie classer les recommandations
-par priorité.
+par ordre de priorité.
+
 Cela NE signifie PAS urgency="critical".
 
-urgency doit être renseigné seulement si l'utilisateur
-demande explicitement :
+urgency doit être renseigné uniquement si l'utilisateur
+demande explicitement un niveau précis :
 critical
 high
 medium
 planned
 
-Sinon urgency doit être "".
 
 3. get_product_forecast
-Utiliser pour :
+
+Pour :
 - forecast d'un SKU
 - prévision de demande
 - demande prévue sur 30 jours
 - prévision d'un produit précis
 
-4. none
-Seulement lorsque la question ne nécessite aucune donnée
+
+4. get_sales_performance
+
+Pour :
+- chiffre d'affaires
+- ventes
+- revenu
+- nombre de transactions
+- quantité vendue
+- panier moyen
+- marge
+- produits les plus vendus
+- produits générant le plus de chiffre d'affaires
+- performance commerciale des magasins
+- magasin réalisant le plus de chiffre d'affaires
+
+
+5. none
+
+Seulement si la question ne nécessite aucune donnée
 StockPilot.
 
 RÈGLES :
 
-- limit = 10 par défaut.
-- sku = "" si aucun SKU.
-- store_name = "" si aucun magasin précis.
-- urgency = "" par défaut.
+limit = 10 par défaut.
+urgency = "" par défaut.
+sku = "" si aucun SKU.
+store_name = "" si aucun magasin précis.
 """
 
     route = default_route()
@@ -750,20 +658,29 @@ RÈGLES :
         payload = call_ollama(
             {
                 "model": OLLAMA_MODEL,
+
                 "messages": [
                     {
                         "role": "system",
-                        "content": router_prompt,
+                        "content":
+                            router_prompt,
                     },
                     {
                         "role": "user",
-                        "content": user_message,
+                        "content":
+                            user_message,
                     },
                 ],
+
                 "stream": False,
                 "think": False,
-                "format": ROUTE_SCHEMA,
-                "keep_alive": "30m",
+
+                "format":
+                    ROUTE_SCHEMA,
+
+                "keep_alive":
+                    "30m",
+
                 "options": {
                     "temperature": 0,
                     "num_predict": 120,
@@ -802,11 +719,6 @@ RÈGLES :
         ValueError,
         KeyError,
     ):
-        # Do not fail the entire assistant if the
-        # LLM router fails.
-        #
-        # The deterministic guards below can still
-        # route the main business use cases.
         route = default_route()
 
     return apply_deterministic_guards(
@@ -816,15 +728,20 @@ RÈGLES :
 
 
 # =========================================================
-# Execute ONLY approved functions
+# Execute approved tool only
 # =========================================================
 
 def execute_route(
     route: dict,
 ) -> tuple[dict, dict]:
-    tool_name = route["tool"]
+    tool_name = route[
+        "tool"
+    ]
 
-    if tool_name == "get_inventory_summary":
+    if (
+        tool_name
+        == "get_inventory_summary"
+    ):
         arguments = {}
 
         result = (
@@ -836,13 +753,16 @@ def execute_route(
         == "get_replenishment_priorities"
     ):
         arguments = {
-            "limit": route["limit"],
+            "limit":
+                route["limit"],
         }
 
         if route["urgency"]:
             arguments[
                 "urgency"
-            ] = route["urgency"]
+            ] = route[
+                "urgency"
+            ]
 
         result = (
             get_replenishment_priorities(
@@ -866,13 +786,18 @@ def execute_route(
             )
 
         arguments = {
-            "sku": route["sku"],
+            "sku":
+                route["sku"],
         }
 
-        if route["store_name"]:
+        if route[
+            "store_name"
+        ]:
             arguments[
                 "store_name"
-            ] = route["store_name"]
+            ] = route[
+                "store_name"
+            ]
 
         result = (
             get_product_forecast(
@@ -880,6 +805,34 @@ def execute_route(
             )
         )
 
+    elif (
+        tool_name
+        == "get_sales_performance"
+    ):
+        arguments = {
+            "limit":
+                route["limit"],
+        }
+
+        result = (
+            get_sales_performance(
+                **arguments
+            )
+        )
+    elif (
+        tool_name
+        == "get_supplier_performance"
+    ):
+        arguments = {
+            "limit":
+                route["limit"],
+        }
+
+        result = (
+            get_supplier_performance(
+                **arguments
+            )
+        )
     else:
         return {}, {}
 
@@ -887,7 +840,730 @@ def execute_route(
 
 
 # =========================================================
-# Generate answer from VERIFIED DATA
+# Deterministic fallback
+# =========================================================
+
+def fallback_business_answer(
+    tool_name: str,
+    tool_result: dict,
+    user_message: str = "",
+) -> str:
+    lower_message = (
+        user_message.lower()
+    )
+
+    # =====================================================
+    # Inventory
+    # =====================================================
+
+    if (
+        tool_name
+        == "get_inventory_summary"
+    ):
+        critical = int(
+            tool_result.get(
+                "critical_count",
+                0,
+            )
+        )
+
+        out_of_stock = int(
+            tool_result.get(
+                "out_of_stock_count",
+                0,
+            )
+        )
+
+        low_stock = int(
+            tool_result.get(
+                "low_stock_count",
+                0,
+            )
+        )
+
+        healthy = int(
+            tool_result.get(
+                "healthy_count",
+                0,
+            )
+        )
+
+        stock_value = (
+            format_number_fr(
+                tool_result.get(
+                    "stock_value_at_cost",
+                    0,
+                )
+            )
+        )
+
+        return (
+            "État actuel du stock : "
+            f"{critical} critique(s), "
+            f"{out_of_stock} en rupture, "
+            f"{low_stock} à stock faible et "
+            f"{healthy} en bonne santé. "
+            f"La valeur du stock au coût est de "
+            f"{stock_value} MAD."
+        )
+
+    # =====================================================
+    # Replenishment
+    # =====================================================
+
+    if (
+        tool_name
+        == "get_replenishment_priorities"
+    ):
+        recommendations = (
+            tool_result.get(
+                "recommendations",
+                [],
+            )
+        )
+
+        if not recommendations:
+            return (
+                "Aucune recommandation de "
+                "réapprovisionnement correspondant "
+                "aux critères demandés n'a été trouvée."
+            )
+
+        lines = [
+            "Priorités de réapprovisionnement ML :"
+        ]
+
+        for index, item in enumerate(
+            recommendations,
+            start=1,
+        ):
+            quantity = item.get(
+                "recommended_order_quantity",
+                0,
+            )
+
+            if isinstance(
+                quantity,
+                float,
+            ) and quantity.is_integer():
+                quantity = int(
+                    quantity
+                )
+
+            stockout_date = (
+                item.get(
+                    "estimated_stockout_date"
+                )
+                or "non estimée"
+            )
+
+            lines.append(
+                f"{index}. "
+                f"{item.get('sku', 'N/A')} — "
+                f"{item.get('product_name', 'N/A')} — "
+                f"{item.get('store_name', 'N/A')} : "
+                f"priorité {item.get('urgency_level', 'N/A')}, "
+                f"{quantity} unités recommandées, "
+                f"rupture estimée le {stockout_date}."
+            )
+
+        lines.append(
+            "Ces recommandations ML sont des aides "
+            "à la décision et ne déclenchent pas "
+            "automatiquement une commande."
+        )
+
+        return "\n".join(
+            lines
+        )
+
+    # =====================================================
+    # Product forecast
+    # =====================================================
+
+    if (
+        tool_name
+        == "get_product_forecast"
+    ):
+        if not tool_result.get(
+            "found",
+            False,
+        ):
+            return (
+                "Aucune prévision n'a été trouvée "
+                "pour le SKU et le magasin demandés."
+            )
+
+        sku = tool_result.get(
+            "sku",
+            "N/A",
+        )
+
+        product_name = (
+            tool_result.get(
+                "product_name",
+                "Produit inconnu",
+            )
+        )
+
+        total = float(
+            tool_result.get(
+                "forecast_total",
+                0,
+            )
+        )
+
+        forecast_start_date = (
+            tool_result.get(
+                "forecast_start_date",
+                "N/A",
+            )
+        )
+
+        forecast_end_date = (
+            tool_result.get(
+                "forecast_end_date",
+                "N/A",
+            )
+        )
+
+        horizon_days = (
+            tool_result.get(
+                "horizon_days",
+                30,
+            )
+        )
+
+        stores = tool_result.get(
+            "stores",
+            [],
+        )
+
+        if len(stores) == 1:
+            store_name = (
+                stores[0].get(
+                    "store_name",
+                    "Magasin inconnu",
+                )
+            )
+
+            store_total = float(
+                stores[0].get(
+                    "forecast_total",
+                    total,
+                )
+            )
+
+            return (
+                f"La demande prévue pour {sku} "
+                f"({product_name}) au {store_name} "
+                f"est de "
+                f"{format_number_fr(store_total)} unités "
+                f"sur {horizon_days} jours, "
+                f"du {forecast_start_date} "
+                f"au {forecast_end_date}."
+            )
+
+        if len(stores) > 1:
+            lines = [
+                (
+                    f"La demande totale prévue pour "
+                    f"{sku} ({product_name}) est de "
+                    f"{format_number_fr(total)} unités "
+                    f"sur {horizon_days} jours."
+                )
+            ]
+
+            for store in stores:
+                store_name = (
+                    store.get(
+                        "store_name",
+                        "Magasin inconnu",
+                    )
+                )
+
+                store_total = float(
+                    store.get(
+                        "forecast_total",
+                        0,
+                    )
+                )
+
+                lines.append(
+                    f"- {store_name} : "
+                    f"{format_number_fr(store_total)} unités"
+                )
+
+            lines.append(
+                f"Période : "
+                f"{forecast_start_date} "
+                f"au {forecast_end_date}."
+            )
+
+            return "\n".join(
+                lines
+            )
+
+        return (
+            f"La demande prévue pour {sku} "
+            f"est de "
+            f"{format_number_fr(total)} unités."
+        )
+
+    # =====================================================
+    # Sales
+    # =====================================================
+
+    if (
+        tool_name
+        == "get_sales_performance"
+    ):
+        summary = tool_result.get(
+            "summary",
+            {},
+        )
+
+        top_quantity = (
+            tool_result.get(
+                "top_products_by_quantity",
+                [],
+            )
+        )
+
+        top_revenue = (
+            tool_result.get(
+                "top_products_by_revenue",
+                [],
+            )
+        )
+
+        stores = tool_result.get(
+            "stores",
+            [],
+        )
+
+        # -------------------------------------------------
+        # Top products by quantity
+        # -------------------------------------------------
+
+        if (
+            "plus vendu" in lower_message
+            or "plus vendus" in lower_message
+            or "meilleures ventes" in lower_message
+        ):
+            if not top_quantity:
+                return (
+                    "Aucune donnée de vente produit "
+                    "n'est disponible."
+                )
+
+            lines = [
+                "Produits les plus vendus :"
+            ]
+
+            for index, product in enumerate(
+                top_quantity,
+                start=1,
+            ):
+                quantity = int(
+                    product.get(
+                        "quantity_sold",
+                        0,
+                    )
+                )
+
+                lines.append(
+                    f"{index}. "
+                    f"{product.get('sku', 'N/A')} — "
+                    f"{product.get('product_name', 'N/A')} : "
+                    f"{quantity} unités vendues."
+                )
+
+            return "\n".join(
+                lines
+            )
+
+        # -------------------------------------------------
+        # Top products by revenue
+        # -------------------------------------------------
+
+        if (
+            "produit" in lower_message
+            and (
+                "chiffre d'affaires"
+                in lower_message
+                or "chiffre d’affaires"
+                in lower_message
+                or "revenu"
+                in lower_message
+            )
+        ):
+            if not top_revenue:
+                return (
+                    "Aucune donnée de chiffre d'affaires "
+                    "par produit n'est disponible."
+                )
+
+            lines = [
+                (
+                    "Produits générant le plus "
+                    "de chiffre d'affaires :"
+                )
+            ]
+
+            for index, product in enumerate(
+                top_revenue,
+                start=1,
+            ):
+                revenue = (
+                    format_number_fr(
+                        product.get(
+                            "net_revenue",
+                            0,
+                        )
+                    )
+                )
+
+                lines.append(
+                    f"{index}. "
+                    f"{product.get('sku', 'N/A')} — "
+                    f"{product.get('product_name', 'N/A')} : "
+                    f"{revenue} MAD."
+                )
+
+            return "\n".join(
+                lines
+            )
+
+        # -------------------------------------------------
+        # Best store
+        # -------------------------------------------------
+
+        if (
+            "magasin" in lower_message
+            and (
+                "chiffre d'affaires"
+                in lower_message
+                or "chiffre d’affaires"
+                in lower_message
+                or "meilleur" in lower_message
+                or "plus de revenu" in lower_message
+            )
+        ):
+            if not stores:
+                return (
+                    "Aucune performance par magasin "
+                    "n'est disponible."
+                )
+
+            store = stores[0]
+
+            revenue = (
+                format_number_fr(
+                    store.get(
+                        "net_revenue",
+                        0,
+                    )
+                )
+            )
+
+            margin = (
+                format_number_fr(
+                    store.get(
+                        "gross_margin",
+                        0,
+                    )
+                )
+            )
+
+            return (
+                f"Le magasin réalisant le plus de "
+                f"chiffre d'affaires est "
+                f"{store.get('store_name', 'N/A')} "
+                f"avec {revenue} MAD, "
+                f"pour une marge brute de "
+                f"{margin} MAD."
+            )
+
+        # -------------------------------------------------
+        # Global commercial summary
+        # -------------------------------------------------
+
+        revenue = (
+            format_number_fr(
+                summary.get(
+                    "net_revenue",
+                    0,
+                )
+            )
+        )
+
+        quantity = int(
+            summary.get(
+                "total_quantity_sold",
+                0,
+            )
+        )
+
+        transactions = int(
+            summary.get(
+                "transaction_count",
+                0,
+            )
+        )
+
+        basket = (
+            format_number_fr(
+                summary.get(
+                    "average_basket_value",
+                    0,
+                )
+            )
+        )
+
+        margin = (
+            format_number_fr(
+                summary.get(
+                    "gross_margin",
+                    0,
+                )
+            )
+        )
+
+        margin_rate = (
+            format_number_fr(
+                summary.get(
+                    "gross_margin_rate_percentage",
+                    0,
+                )
+            )
+        )
+
+        return (
+            "Performance commerciale :\n"
+            f"- Chiffre d'affaires : {revenue} MAD\n"
+            f"- Quantité vendue : {quantity} unités\n"
+            f"- Transactions : {transactions}\n"
+            f"- Panier moyen : {basket} MAD\n"
+            f"- Marge brute : {margin} MAD "
+            f"({margin_rate} %)"
+        )
+        # =====================================================
+    # Suppliers
+    # =====================================================
+
+    if (
+        tool_name
+        == "get_supplier_performance"
+    ):
+        summary = tool_result.get(
+            "summary",
+            {},
+        )
+
+        best_suppliers = (
+            tool_result.get(
+                "best_suppliers",
+                [],
+            )
+        )
+
+        suppliers_at_risk = (
+            tool_result.get(
+                "suppliers_at_risk",
+                [],
+            )
+        )
+
+        # -------------------------------------------------
+        # Delivery problems / worst suppliers
+        # -------------------------------------------------
+
+        if any(
+            expression in lower_message
+            for expression in (
+                "problème",
+                "problèmes",
+                "probleme",
+                "problemes",
+                "retard",
+                "retards",
+                "moins performant",
+                "moins performants",
+                "pire fournisseur",
+                "pires fournisseurs",
+                "à risque",
+                "a risque",
+            )
+        ):
+            if not suppliers_at_risk:
+                return (
+                    "Aucune donnée fournisseur "
+                    "n'est disponible."
+                )
+
+            lines = [
+                "Fournisseurs présentant le plus "
+                "de problèmes de livraison :"
+            ]
+
+            for index, supplier in enumerate(
+                suppliers_at_risk,
+                start=1,
+            ):
+                on_time_rate = float(
+                    supplier.get(
+                        "on_time_delivery_rate_percentage",
+                        0,
+                    )
+                )
+
+                late = int(
+                    supplier.get(
+                        "late_deliveries",
+                        0,
+                    )
+                )
+
+                delay = float(
+                    supplier.get(
+                        "average_delivery_delay_days",
+                        0,
+                    )
+                )
+
+                score = float(
+                    supplier.get(
+                        "supplier_score",
+                        0,
+                    )
+                )
+
+                lines.append(
+                    f"{index}. "
+                    f"{supplier.get('supplier_name', 'N/A')} "
+                    f"({supplier.get('supplier_code', 'N/A')}) : "
+                    f"{on_time_rate:.2f} % de livraisons à temps, "
+                    f"{late} livraisons en retard, "
+                    f"{delay:.2f} jours de retard moyen, "
+                    f"score {score:.2f}/100."
+                )
+
+            return "\n".join(lines)
+
+        # -------------------------------------------------
+        # Best suppliers
+        # -------------------------------------------------
+
+        if (
+            "meilleur fournisseur" in lower_message
+            or "meilleurs fournisseurs" in lower_message
+        ):
+            if not best_suppliers:
+                return (
+                    "Aucune donnée fournisseur "
+                    "n'est disponible."
+                )
+
+            lines = [
+                "Meilleurs fournisseurs :"
+            ]
+
+            for index, supplier in enumerate(
+                best_suppliers,
+                start=1,
+            ):
+                score = float(
+                    supplier.get(
+                        "supplier_score",
+                        0,
+                    )
+                )
+
+                on_time = float(
+                    supplier.get(
+                        "on_time_delivery_rate_percentage",
+                        0,
+                    )
+                )
+
+                fulfillment = float(
+                    supplier.get(
+                        "quantity_fulfillment_rate_percentage",
+                        0,
+                    )
+                )
+
+                lines.append(
+                    f"{index}. "
+                    f"{supplier.get('supplier_name', 'N/A')} "
+                    f"({supplier.get('supplier_code', 'N/A')}) : "
+                    f"score {score:.2f}/100, "
+                    f"{on_time:.2f} % à temps, "
+                    f"{fulfillment:.2f} % de fulfillment."
+                )
+
+            return "\n".join(lines)
+
+        # -------------------------------------------------
+        # Global supplier summary
+        # -------------------------------------------------
+
+        supplier_count = int(
+            summary.get(
+                "supplier_count",
+                0,
+            )
+        )
+
+        average_score = float(
+            summary.get(
+                "average_supplier_score",
+                0,
+            )
+        )
+
+        on_time = float(
+            summary.get(
+                "average_on_time_delivery_rate_percentage",
+                0,
+            )
+        )
+
+        fulfillment = float(
+            summary.get(
+                "average_fulfillment_rate_percentage",
+                0,
+            )
+        )
+
+        late = int(
+            summary.get(
+                "total_late_deliveries",
+                0,
+            )
+        )
+
+        return (
+            f"Vous avez {supplier_count} fournisseurs. "
+            f"Le score moyen est de {average_score:.2f}/100, "
+            f"le taux moyen de livraison à temps est de "
+            f"{on_time:.2f} %, "
+            f"le taux de fulfillment est de "
+            f"{fulfillment:.2f} % "
+            f"et {late} livraisons en retard "
+            f"ont été enregistrées."
+        )
+
+    return (
+        "Les données ont bien été récupérées, "
+        "mais aucune présentation adaptée "
+        "n'est disponible."
+    )
+
+
+# =========================================================
+# Business answer with Qwen
 # =========================================================
 
 def generate_business_answer(
@@ -906,11 +1582,10 @@ def generate_business_answer(
 
 Tu es StockPilot AI.
 
-Réponds DIRECTEMENT à la question.
-Ne réfléchis pas à voix haute.
+Réponds DIRECTEMENT à la question utilisateur.
 
-Tu dois utiliser UNIQUEMENT les données
-backend vérifiées fournies.
+Tu dois utiliser UNIQUEMENT les données backend
+vérifiées fournies.
 
 Règles absolues :
 
@@ -918,23 +1593,21 @@ Règles absolues :
 - N'invente aucun SKU.
 - N'invente aucun magasin.
 - N'invente aucune quantité.
-- N'invente aucune date.
 - N'invente aucune prévision.
-- N'invente aucun niveau de priorité.
+- N'invente aucune date.
 - N'invente aucune devise.
+- N'invente aucun niveau d'urgence.
+- N'invente aucun chiffre d'affaires.
 
-La devise StockPilot est MAD pour
-les informations monétaires.
+La devise StockPilot est MAD pour les valeurs monétaires.
 
-N'explique jamais comment tu analyses
-la question.
+N'explique jamais ton raisonnement interne.
 
 N'écris jamais :
-- "Okay"
-- "Let me"
-- "The user"
-- "I need"
-- ton raisonnement
+- Okay
+- Let me
+- The user
+- I need
 - tes étapes internes
 - une balise think
 
@@ -942,29 +1615,29 @@ Commence directement par la réponse métier.
 
 Réponds uniquement en français.
 
-Pour une recommandation ML, indique :
-SKU, produit, magasin, priorité,
-quantité recommandée et date estimée
-de rupture lorsque ces données existent.
-
-Une recommandation ML est une aide
-à la décision et ne déclenche aucune
-commande automatiquement.
+Une recommandation ML est une aide à la décision
+et ne crée jamais automatiquement une commande.
 
 /no_think
 """
 
     payload = call_ollama(
         {
-            "model": OLLAMA_MODEL,
+            "model":
+                OLLAMA_MODEL,
 
             "messages": [
                 {
-                    "role": "system",
-                    "content": system_prompt,
+                    "role":
+                        "system",
+
+                    "content":
+                        system_prompt,
                 },
                 {
-                    "role": "user",
+                    "role":
+                        "user",
+
                     "content": (
                         "/no_think\n\n"
                         f"Question : {user_message}\n\n"
@@ -975,13 +1648,21 @@ commande automatiquement.
                 },
             ],
 
-            "stream": False,
-            "think": False,
-            "keep_alive": "30m",
+            "stream":
+                False,
+
+            "think":
+                False,
+
+            "keep_alive":
+                "30m",
 
             "options": {
-                "temperature": 0,
-                "num_predict": 600,
+                "temperature":
+                    0,
+
+                "num_predict":
+                    600,
             },
         }
     )
@@ -1002,24 +1683,20 @@ commande automatiquement.
         content
     )
 
-    # Qwen3:4b sometimes leaks its reasoning
-    # despite non-thinking mode.
-    # Never expose it to the API user.
-    if contains_reasoning_leak(
-        cleaned
+    if (
+        not cleaned
+        or contains_reasoning_leak(
+            cleaned
+        )
     ):
         return fallback_business_answer(
-            tool_name,
-            tool_result,
-        )
-
-    if not cleaned:
-        return fallback_business_answer(
-            tool_name,
-            tool_result,
+            tool_name=tool_name,
+            tool_result=tool_result,
+            user_message=user_message,
         )
 
     return cleaned
+
 
 # =========================================================
 # Generic answer
@@ -1030,32 +1707,46 @@ def generate_generic_answer(
 ) -> str:
     payload = call_ollama(
         {
-            "model": OLLAMA_MODEL,
+            "model":
+                OLLAMA_MODEL,
+
             "messages": [
                 {
-                    "role": "system",
+                    "role":
+                        "system",
+
                     "content": (
+                        "/no_think\n"
                         "Tu es StockPilot AI. "
-                        "Réponds en français. "
-                        "Réponds uniquement aux questions "
-                        "générales ne nécessitant pas les "
-                        "données privées StockPilot. "
+                        "Réponds directement en français. "
                         "N'invente jamais de chiffres "
-                        "concernant le stock, les ventes, "
-                        "les forecasts ou les commandes."
+                        "concernant StockPilot."
                     ),
                 },
                 {
-                    "role": "user",
-                    "content": user_message,
+                    "role":
+                        "user",
+
+                    "content":
+                        user_message,
                 },
             ],
-            "stream": False,
-            "think": False,
-            "keep_alive": "30m",
+
+            "stream":
+                False,
+
+            "think":
+                False,
+
+            "keep_alive":
+                "30m",
+
             "options": {
-                "temperature": 0.2,
-                "num_predict": 250,
+                "temperature":
+                    0.2,
+
+                "num_predict":
+                    250,
             },
         }
     )
@@ -1072,13 +1763,23 @@ def generate_generic_answer(
         )
     )
 
-    return clean_model_answer(
+    cleaned = clean_model_answer(
         content
     )
 
+    if contains_reasoning_leak(
+        cleaned
+    ):
+        return (
+            "Je peux vous aider à analyser "
+            "les données StockPilot disponibles."
+        )
+
+    return cleaned
+
 
 # =========================================================
-# Public assistant function
+# Public assistant
 # =========================================================
 
 def ask_stockpilot(
@@ -1091,38 +1792,50 @@ def ask_stockpilot(
 
     if not user_message:
         return {
-            "model": OLLAMA_MODEL,
-            "answer": (
-                "Veuillez saisir une question."
-            ),
-            "tools_used": [],
-            "route": default_route(),
+            "model":
+                OLLAMA_MODEL,
+
+            "answer":
+                "Veuillez saisir une question.",
+
+            "tools_used":
+                [],
+
+            "route":
+                default_route(),
         }
 
     route = route_user_request(
         user_message
     )
 
-    tool_name = route["tool"]
+    tool_name = route[
+        "tool"
+    ]
 
     # =====================================================
-    # Generic question
+    # Generic
     # =====================================================
 
     if tool_name == "none":
         return {
-            "model": OLLAMA_MODEL,
-            "answer": (
+            "model":
+                OLLAMA_MODEL,
+
+            "answer":
                 generate_generic_answer(
                     user_message
-                )
-            ),
-            "tools_used": [],
-            "route": route,
+                ),
+
+            "tools_used":
+                [],
+
+            "route":
+                route,
         }
 
     # =====================================================
-    # Business data question
+    # Execute business tool
     # =====================================================
 
     try:
@@ -1134,52 +1847,81 @@ def ask_stockpilot(
 
     except Exception as error:
         return {
-            "model": OLLAMA_MODEL,
+            "model":
+                OLLAMA_MODEL,
+
             "answer": (
                 "Une erreur est survenue lors "
                 "de la récupération des données "
                 "StockPilot."
             ),
+
             "tools_used": [
                 {
-                    "name": tool_name,
-                    "arguments": {},
+                    "name":
+                        tool_name,
+
+                    "arguments":
+                        {},
                 }
             ],
-            "route": route,
-            "error": str(error),
+
+            "route":
+                route,
+
+            "error":
+                str(error),
         }
 
     # =====================================================
-    # Generate final natural-language answer
+    # Natural-language answer
     # =====================================================
 
     try:
         answer = (
             generate_business_answer(
-                user_message=user_message,
-                tool_name=tool_name,
-                tool_result=result,
+                user_message=
+                    user_message,
+
+                tool_name=
+                    tool_name,
+
+                tool_result=
+                    result,
             )
         )
 
     except Exception:
-        # If Qwen fails after the business tool succeeded,
-        # never lose the verified result.
         answer = (
-            "Les données ont bien été récupérées, "
-            "mais la génération de la réponse "
-            "en langage naturel a échoué."
+            fallback_business_answer(
+                tool_name=
+                    tool_name,
+
+                tool_result=
+                    result,
+
+                user_message=
+                    user_message,
+            )
         )
 
     return {
-        "model": OLLAMA_MODEL,
-        "answer": answer,
+        "model":
+            OLLAMA_MODEL,
+
+        "answer":
+            answer,
+
         "tools_used": [
             {
-                "name": tool_name,
-                "arguments": arguments,
+                "name":
+                    tool_name,
+
+                "arguments":
+                    arguments,
             }
         ],
-        "route": route,
+
+        "route":
+            route,
     }
