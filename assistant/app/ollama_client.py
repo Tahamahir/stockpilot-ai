@@ -28,6 +28,15 @@ OLLAMA_MODEL = os.getenv(
     "OLLAMA_MODEL",
     "qwen3:4b",
 )
+FAST_BUSINESS_RESPONSES = (
+    os.getenv(
+        "FAST_BUSINESS_RESPONSES",
+        "true",
+    )
+    .strip()
+    .lower()
+    == "true"
+)
 
 OLLAMA_TIMEOUT = httpx.Timeout(
     connect=15.0,
@@ -644,108 +653,122 @@ def apply_deterministic_guards(
 # =========================================================
 # LLM Router
 # =========================================================
+def deterministic_route(
+    user_message: str,
+) -> dict:
+    """
+    Try to route known StockPilot business questions
+    without calling the LLM.
+    """
 
+    route = default_route()
+
+    route = apply_deterministic_guards(
+        user_message,
+        route,
+    )
+
+    return route
 def route_user_request(
     user_message: str,
 ) -> dict:
+    """
+    Fast hybrid router.
+
+    1. Try deterministic Python routing first.
+    2. Call Ollama only if Python cannot identify
+       the business intent.
+    """
+
+    # =====================================================
+    # FAST PATH
+    # =====================================================
+
+    fast_route = apply_deterministic_guards(
+        user_message,
+        default_route(),
+    )
+
+    # Known StockPilot business intent:
+    # do NOT call Ollama.
+    if fast_route["tool"] != "none":
+        return fast_route
+
+    # =====================================================
+    # LLM FALLBACK
+    #
+    # Used only for ambiguous / unknown questions.
+    # =====================================================
+
     router_prompt = """
 Tu es uniquement le routeur sécurisé de StockPilot AI.
 
 Tu ne dois jamais répondre à la question métier.
-Tu dois seulement sélectionner le tool approprié.
+Tu dois uniquement sélectionner un tool.
 
+Tools disponibles :
 
 1. get_inventory_summary
 
-Utiliser pour :
-- état global du stock
-- stock actuel
-- rupture de stock
+Pour :
+- état du stock
 - stock faible
+- rupture
 - stock critique
 - valeur du stock
 
 
 2. get_replenishment_priorities
 
-Utiliser pour :
-- quoi commander
-- produits à commander
-- produits urgents
-- priorités de commande
+Pour :
+- commandes
+- réapprovisionnement
+- priorités
 - recommandations ML
-- plan de réapprovisionnement
 - risque de rupture
-
-IMPORTANT :
-
-"les plus urgents" signifie classer les recommandations
-par ordre de priorité.
-
-Cela NE signifie PAS urgency="critical".
-
-urgency doit être renseigné uniquement lorsque
-l'utilisateur demande explicitement un niveau précis :
-
-critical
-high
-medium
-planned
 
 
 3. get_product_forecast
 
-Utiliser pour :
-- forecast d'un SKU
-- prévision de demande
-- demande prévue sur 30 jours
-- prévision d'un produit précis
-- prévision produit par magasin
+Pour :
+- forecast
+- prévision
+- demande future
+- prévision d'un SKU
 
 
 4. get_sales_performance
 
-Utiliser pour :
+Pour :
 - chiffre d'affaires
 - ventes
-- revenu
-- nombre de transactions
-- quantité vendue
-- panier moyen
 - marge
-- produits les plus vendus
-- produits générant le plus de chiffre d'affaires
-- performance commerciale des magasins
-- magasin réalisant le plus de chiffre d'affaires
+- panier moyen
+- transactions
+- produits vendus
+- performance magasin
 
 
 5. get_supplier_performance
 
-Utiliser pour :
+Pour :
 - fournisseurs
-- meilleur fournisseur
-- meilleurs fournisseurs
-- fournisseurs les moins performants
+- performance fournisseurs
+- retards
 - problèmes de livraison
-- retards fournisseurs
-- taux de livraison à temps
-- taux de fulfillment
-- score fournisseur
-- performance fournisseur
+- meilleur fournisseur
 
 
 6. none
 
-Seulement lorsque la question ne nécessite
-aucune donnée StockPilot.
+Si aucun tool StockPilot n'est adapté.
 
-
-RÈGLES :
+Règles :
 
 limit = 10 par défaut.
 urgency = "" par défaut.
-sku = "" si aucun SKU.
-store_name = "" si aucun magasin précis.
+sku = "" par défaut.
+store_name = "" par défaut.
 """
 
     route = default_route()
@@ -753,44 +776,29 @@ store_name = "" si aucun magasin précis.
     try:
         payload = call_ollama(
             {
-                "model":
-                    OLLAMA_MODEL,
+                "model": OLLAMA_MODEL,
 
                 "messages": [
                     {
-                        "role":
-                            "system",
-
-                        "content":
-                            router_prompt,
+                        "role": "system",
+                        "content": router_prompt,
                     },
                     {
-                        "role":
-                            "user",
-
-                        "content":
-                            user_message,
+                        "role": "user",
+                        "content": user_message,
                     },
                 ],
 
-                "stream":
-                    False,
+                "stream": False,
+                "think": False,
 
-                "think":
-                    False,
+                "format": ROUTE_SCHEMA,
 
-                "format":
-                    ROUTE_SCHEMA,
-
-                "keep_alive":
-                    "30m",
+                "keep_alive": "30m",
 
                 "options": {
-                    "temperature":
-                        0,
-
-                    "num_predict":
-                        120,
+                    "temperature": 0,
+                    "num_predict": 80,
                 },
             }
         )
@@ -832,11 +840,6 @@ store_name = "" si aucun magasin précis.
         user_message,
         route,
     )
-
-
-# =========================================================
-# Execute approved tool only
-# =========================================================
 
 def execute_route(
     route: dict,
@@ -1492,18 +1495,27 @@ def fallback_business_answer(
             )
         )
 
-        return (
-            "Performance commerciale :\n"
-            f"- Chiffre d'affaires : {revenue} MAD\n"
-            f"- Quantité vendue : "
-            f"{quantity:,} unités\n"
-            f"- Transactions : "
-            f"{transactions:,}\n"
-            f"- Panier moyen : {basket} MAD\n"
-            f"- Marge brute : {margin} MAD "
-            f"({margin_rate} %)"
-        ).replace(",", " ")
+    quantity_formatted = (
+        f"{quantity:,}"
+        .replace(",", " ")
+    )
 
+    transactions_formatted = (
+        f"{transactions:,}"
+        .replace(",", " ")
+    )
+
+    return (
+        "Performance commerciale :\n"
+        f"- Chiffre d'affaires : {revenue} MAD\n"
+            f"- Quantité vendue : "
+        f"{quantity_formatted} unités\n"
+        f"- Transactions : "
+        f"{transactions_formatted}\n"
+        f"- Panier moyen : {basket} MAD\n"
+        f"- Marge brute : {margin} MAD "
+        f"({margin_rate} %)"
+    )   
     # =====================================================
     # Suppliers
     # =====================================================
@@ -1743,17 +1755,22 @@ def fallback_business_answer(
             )
         )
 
-        return (
-            f"Vous avez {supplier_count} fournisseurs. "
-            f"Le score moyen est de "
-            f"{format_number_fr(average_score)}/100, "
-            f"le taux moyen de livraison à temps est de "
-            f"{format_number_fr(on_time)} %, "
-            f"le taux de fulfillment est de "
-            f"{format_number_fr(fulfillment)} % "
-            f"et {late:,} livraisons en retard "
-            f"ont été enregistrées."
-        ).replace(",", " ")
+    late_formatted = (
+        f"{late:,}"
+        .replace(",", " ")  
+    )
+
+    return (
+        f"Vous avez {supplier_count} fournisseurs. "
+        f"Le score moyen est de "
+        f"{format_number_fr(average_score)}/100, "
+        f"le taux moyen de livraison à temps est de "
+        f"{format_number_fr(on_time)} %, "
+        f"le taux de fulfillment est de "
+        f"{format_number_fr(fulfillment)} % "
+        f"et {late_formatted} livraisons en retard "
+        f"ont été enregistrées."
+    )
 
     return (
         "Les données ont bien été récupérées, "
@@ -2060,6 +2077,10 @@ def ask_stockpilot(
     # Execute business tool
     # =====================================================
 
+    # =====================================================
+# Execute business tool
+# =====================================================
+
     try:
         result, arguments = (
             execute_route(
@@ -2095,25 +2116,15 @@ def ask_stockpilot(
                 str(error),
         }
 
+
     # =====================================================
-    # Natural-language answer
+    # Generate response
     # =====================================================
 
-    try:
-        answer = (
-            generate_business_answer(
-                user_message=
-                    user_message,
+    if FAST_BUSINESS_RESPONSES:
 
-                tool_name=
-                    tool_name,
-
-                tool_result=
-                    result,
-            )
-        )
-
-    except Exception:
+    # Fast mode:
+    # no second Ollama call for known business questions.
         answer = (
             fallback_business_answer(
                 tool_name=
@@ -2126,6 +2137,43 @@ def ask_stockpilot(
                     user_message,
             )
         )
+
+    else:
+
+    # LLM mode:
+    # Qwen reformulates the verified backend data.
+        try:
+            answer = (
+                generate_business_answer(
+                    user_message=
+                        user_message,
+
+                    tool_name=
+                        tool_name,
+
+                    tool_result=
+                        result,
+                )
+            )
+
+        except Exception:
+            answer = (
+                fallback_business_answer(
+                    tool_name=
+                        tool_name,
+
+                    tool_result=
+                        result,
+
+                    user_message=
+                        user_message,
+                )
+            )
+
+
+    # =====================================================
+    # Final API response
+    # =====================================================
 
     return {
         "model":

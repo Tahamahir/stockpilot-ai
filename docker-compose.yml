@@ -77,6 +77,8 @@ services:
       OLLAMA_BASE_URL: "http://ollama:11434"
       OLLAMA_MODEL: "qwen3:4b"
 
+      FAST_BUSINESS_RESPONSES: "true"
+
     ports:
       - "8000:8000"
 
