@@ -32,6 +32,57 @@ services:
     profiles:
       - ml
   # =======================================================
+  # Ollama local LLM
+  # =======================================================
+
+  ollama:
+    image: ollama/ollama:latest
+
+    container_name: stockpilot-ollama
+
+    restart: unless-stopped
+
+    ports:
+      - "11434:11434"
+
+    volumes:
+      - ollama_data:/root/.ollama  
+  # =======================================================
+  # StockPilot AI Assistant API
+  # =======================================================
+
+  assistant-api:
+    build:
+      context: .
+      dockerfile: assistant/Dockerfile
+
+    container_name: stockpilot-assistant-api
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      ollama:
+        condition: service_started
+
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: "${POSTGRES_DB}"
+      DB_USER: "${POSTGRES_USER}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
+
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "qwen3:4b"
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./assistant/app:/app/app  
+  # =======================================================
   # MLflow experiment tracking
   # =======================================================
   mlflow:
@@ -244,3 +295,6 @@ volumes:
 
   mlflow_artifacts:
     name: stockpilot-mlflow-artifacts
+    
+  ollama_data:
+    name: stockpilot-ollama-data  
