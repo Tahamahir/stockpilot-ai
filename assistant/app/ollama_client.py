@@ -325,6 +325,75 @@ def default_route() -> dict:
         "store_name": "",
     }
 
+def default_conversation_context() -> dict:
+    return {
+        "last_tool": "none",
+        "limit": 10,
+        "urgency": "",
+        "sku": "",
+        "store_name": "",
+    }
+
+
+def normalize_conversation_context(
+    context: dict | None,
+) -> dict:
+    normalized = (
+        default_conversation_context()
+    )
+
+    if isinstance(
+        context,
+        dict,
+    ):
+        normalized.update(
+            {
+                key: context.get(
+                    key,
+                    default_value,
+                )
+                for key, default_value
+                in normalized.items()
+            }
+        )
+
+    return normalized
+
+
+def route_to_context(
+    route: dict,
+) -> dict:
+    return {
+        "last_tool":
+            route.get(
+                "tool",
+                "none",
+            ),
+
+        "limit":
+            route.get(
+                "limit",
+                10,
+            ),
+
+        "urgency":
+            route.get(
+                "urgency",
+                "",
+            ),
+
+        "sku":
+            route.get(
+                "sku",
+                "",
+            ),
+
+        "store_name":
+            route.get(
+                "store_name",
+                "",
+            ),
+    }
 
 # =========================================================
 # Deterministic routing
@@ -669,8 +738,314 @@ def deterministic_route(
     )
 
     return route
+def extract_store_name(
+    user_message: str,
+) -> str:
+    """
+    Extract known demo store locations.
+
+    Examples:
+    - Rabat
+    - Magasin Rabat
+    - Casablanca
+    """
+
+    lower_message = (
+        user_message
+        .lower()
+    )
+
+    known_stores = {
+        "rabat":
+            "Rabat",
+
+        "casablanca":
+            "Casablanca",
+    }
+
+    for keyword, store_name in (
+        known_stores.items()
+    ):
+        if re.search(
+            rf"\b{re.escape(keyword)}\b",
+            lower_message,
+        ):
+            return store_name
+
+    return ""
+
+
+def looks_like_follow_up(
+    user_message: str,
+) -> bool:
+    lower_message = (
+        user_message
+        .strip()
+        .lower()
+    )
+
+    follow_up_starts = (
+        "et ",
+        "et seulement",
+        "et uniquement",
+        "seulement ",
+        "uniquement ",
+        "garde ",
+        "gardez ",
+        "retire ",
+        "retirez ",
+        "enlève ",
+        "enleve ",
+        "enlevez ",
+        "supprime ",
+        "supprimez ",
+        "sans ",
+        "pour rabat",
+        "pour casablanca",
+        "à rabat",
+        "a rabat",
+        "à casablanca",
+        "a casablanca",
+        "les 3",
+        "les 5",
+    )
+
+    return (
+        lower_message.startswith(
+            follow_up_starts
+        )
+        or len(
+            lower_message.split()
+        ) <= 6
+    )
+
+def apply_conversation_context(
+    user_message: str,
+    route: dict,
+    context: dict | None,
+) -> dict:
+    """
+    Merge the previous structured business context
+    into a follow-up question.
+
+    No LLM call is required.
+    """
+
+    context = (
+        normalize_conversation_context(
+            context
+        )
+    )
+
+    lower_message = (
+        user_message
+        .lower()
+    )
+
+    previous_tool = (
+        context.get(
+            "last_tool",
+            "none",
+        )
+    )
+
+    # =====================================================
+    # Follow-up inherits previous business tool
+    # =====================================================
+
+    if (
+        route.get(
+            "tool"
+        ) == "none"
+        and previous_tool != "none"
+        and looks_like_follow_up(
+            user_message
+        )
+    ):
+        route["tool"] = (
+            previous_tool
+        )
+
+        route["limit"] = (
+            context.get(
+                "limit",
+                10,
+            )
+        )
+
+        route["urgency"] = (
+            context.get(
+                "urgency",
+                "",
+            )
+        )
+
+        route["sku"] = (
+            context.get(
+                "sku",
+                "",
+            )
+        )
+
+        route["store_name"] = (
+            context.get(
+                "store_name",
+                "",
+            )
+        )
+
+    # =====================================================
+    # Explicit store in new question
+    # =====================================================
+
+    explicit_store = (
+        extract_store_name(
+            user_message
+        )
+    )
+
+    if explicit_store:
+        route["store_name"] = (
+            explicit_store
+        )
+
+    # =====================================================
+    # Preserve previous store for natural follow-up
+    # =====================================================
+
+    elif (
+        looks_like_follow_up(
+            user_message
+        )
+        and not route.get(
+            "store_name"
+        )
+        and context.get(
+            "store_name"
+        )
+    ):
+        route["store_name"] = (
+            context[
+                "store_name"
+            ]
+        )
+
+    # =====================================================
+    # Explicit urgency
+    # =====================================================
+
+    if any(
+        pattern in lower_message
+        for pattern in (
+            "critique",
+            "critiques",
+            "critical",
+        )
+    ):
+        route["urgency"] = (
+            "critical"
+        )
+
+    elif any(
+        pattern in lower_message
+        for pattern in (
+            "priorité élevée",
+            "priorite elevee",
+            "niveau élevé",
+            "niveau eleve",
+            "high",
+        )
+    ):
+        route["urgency"] = (
+            "high"
+        )
+
+    elif any(
+        pattern in lower_message
+        for pattern in (
+            "priorité moyenne",
+            "priorite moyenne",
+            "niveau moyen",
+            "medium",
+        )
+    ):
+        route["urgency"] = (
+            "medium"
+        )
+
+    elif any(
+        pattern in lower_message
+        for pattern in (
+            "planifiée",
+            "planifiee",
+            "planned",
+        )
+    ):
+        route["urgency"] = (
+            "planned"
+        )
+
+    # =====================================================
+    # User explicitly removes urgency filter
+    # =====================================================
+
+    remove_urgency_patterns = (
+        "toutes les priorités",
+        "toutes les priorites",
+        "sans filtre de priorité",
+        "sans filtre de priorite",
+        "retire le filtre critique",
+        "retirez le filtre critique",
+        "enlève le filtre critique",
+        "enleve le filtre critique",
+        "supprime le filtre critique",
+        "supprimez le filtre critique",
+        "sans filtre critique",
+        "sans priorité critique",
+        "sans priorite critique",
+        "retire la priorité critique",
+        "retire la priorite critique",
+    )
+
+    if any(
+        phrase in lower_message
+        for phrase in remove_urgency_patterns
+    ):
+        route["urgency"] = ""
+
+    # =====================================================
+    # Explicit limit
+    # =====================================================
+
+    limit_match = re.search(
+        r"\b(\d{1,2})\b",
+        user_message,
+    )
+
+    if (
+        limit_match
+        and route.get(
+            "tool"
+        ) in {
+            "get_replenishment_priorities",
+            "get_sales_performance",
+            "get_supplier_performance",
+        }
+    ):
+        route["limit"] = max(
+            1,
+            min(
+                int(
+                    limit_match.group(1)
+                ),
+                50,
+            ),
+        )
+
+    return route
 def route_user_request(
     user_message: str,
+    context: dict | None = None,
 ) -> dict:
     """
     Fast hybrid router.
@@ -684,13 +1059,26 @@ def route_user_request(
     # FAST PATH
     # =====================================================
 
-    fast_route = apply_deterministic_guards(
-        user_message,
-        default_route(),
+    fast_route = (
+        apply_deterministic_guards(
+            user_message,
+            default_route(),
+        )
     )
 
-    # Known StockPilot business intent:
-    # do NOT call Ollama.
+    fast_route = (
+        apply_conversation_context(
+            user_message=
+                user_message,
+
+            route=
+                fast_route,
+
+            context=
+                context,
+        )
+    )
+
     if fast_route["tool"] != "none":
         return fast_route
 
@@ -836,10 +1224,27 @@ store_name = "" par défaut.
     ):
         route = default_route()
 
-    return apply_deterministic_guards(
-        user_message,
-        route,
+    route = (
+        apply_deterministic_guards(
+            user_message,
+            route,
+        )
+    )   
+
+    route = (
+        apply_conversation_context(
+            user_message=
+                user_message,
+
+            route=
+                route,
+
+            context=
+                context,
+        )
     )
+
+    return route
 
 def execute_route(
     route: dict,
@@ -880,6 +1285,12 @@ def execute_route(
                 "urgency"
             ] = route[
                 "urgency"
+            ]
+        if route["store_name"]:
+            arguments[
+                "store_name"
+            ] = route[
+                "store_name"
             ]
 
         result = (
@@ -1063,6 +1474,45 @@ def fallback_business_answer(
         )
 
         if not recommendations:
+            urgency = tool_result.get(
+                "urgency_filter",
+                "",
+            )
+
+            store_name = tool_result.get(
+                "store_filter",
+                "",
+            )
+
+            urgency_label = (
+                URGENCY_LABELS.get(
+                    urgency,
+                    urgency,
+                )
+                if urgency
+                else ""
+            )
+
+            if urgency_label and store_name:
+                return (
+                    "Aucune recommandation de priorité "
+                    f"{urgency_label} n'a été trouvée "
+                    f"pour le Magasin {store_name}."
+                )
+
+            if urgency_label:
+                return (
+                    "Aucune recommandation de priorité "
+                    f"{urgency_label} n'a été trouvée."
+                )
+
+            if store_name:
+                return (
+                    "Aucune recommandation de "
+                    "réapprovisionnement n'a été trouvée "
+                    f"pour le Magasin {store_name}."
+                )
+
             return (
                 "Aucune recommandation de "
                 "réapprovisionnement correspondant "
@@ -2023,6 +2473,7 @@ def generate_generic_answer(
 
 def ask_stockpilot(
     user_message: str,
+    context: dict | None = None,
 ) -> dict:
     user_message = (
         user_message
@@ -2045,12 +2496,18 @@ def ask_stockpilot(
         }
 
     route = route_user_request(
-        user_message
+        user_message,
+        context=context,
     )
 
     tool_name = route[
         "tool"
     ]
+    updated_context = (
+        route_to_context(
+            route
+        )
+    )
 
     # =====================================================
     # Generic
@@ -2071,6 +2528,11 @@ def ask_stockpilot(
 
             "route":
                 route,
+
+            "context":
+                normalize_conversation_context(
+                    context
+                ),
         }
 
     # =====================================================
@@ -2194,4 +2656,7 @@ def ask_stockpilot(
 
         "route":
             route,
+            
+        "context":
+            updated_context,
     }

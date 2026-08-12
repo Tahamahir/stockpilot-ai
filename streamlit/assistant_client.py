@@ -35,9 +35,10 @@ def check_assistant_health() -> dict:
 
 def send_message(
     message: str,
+    context: dict | None = None,
 ) -> dict:
     """
-    Send one user message to the StockPilot Assistant API.
+    Send a message with structured conversation context.
     """
 
     message = message.strip()
@@ -50,7 +51,11 @@ def send_message(
     response = httpx.post(
         f"{ASSISTANT_API_URL}/chat",
         json={
-            "message": message,
+            "message":
+                message,
+
+            "context":
+                context or {},
         },
         timeout=ASSISTANT_TIMEOUT,
     )
@@ -81,6 +86,12 @@ def send_message(
         "route":
             payload.get(
                 "route",
+                {},
+            ),
+
+        "context":
+            payload.get(
+                "context",
                 {},
             ),
 

@@ -122,6 +122,9 @@ if "assistant_messages" not in st.session_state:
 if "pending_example_question" not in st.session_state:
     st.session_state.pending_example_question = None
 
+if "assistant_context" not in st.session_state:
+    st.session_state.assistant_context = {}
+
 
 # =========================================================
 # Helpers
@@ -212,8 +215,18 @@ def process_user_message(
             "StockPilot AI analyse vos données..."
         ):
             response = send_message(
-                user_message
+                message=
+                    user_message,
+
+                context=
+                    st.session_state.assistant_context,
             )
+        st.session_state.assistant_context = (
+            response.get(
+                "context",
+                {},
+            )
+        )
 
         answer = (
             response.get(

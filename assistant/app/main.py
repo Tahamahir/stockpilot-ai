@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import (
     test_database_connection,
@@ -15,12 +17,18 @@ from app.ollama_client import (
 
 app = FastAPI(
     title="StockPilot AI Assistant API",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
 class ChatRequest(BaseModel):
     message: str
+
+    context: dict[str, Any] = (
+        Field(
+            default_factory=dict
+        )
+    )
 
 
 @app.get("/")
@@ -36,7 +44,6 @@ def root() -> dict:
 
 @app.get("/health")
 def health() -> dict:
-
     database = (
         test_database_connection()
     )
@@ -56,9 +63,12 @@ def health() -> dict:
 def chat(
     request: ChatRequest,
 ) -> dict:
-
     return ask_stockpilot(
-        request.message
+        user_message=
+            request.message,
+
+        context=
+            request.context,
     )
 
 
@@ -66,7 +76,10 @@ def chat(
 def test_chat(
     request: ChatRequest,
 ) -> dict:
-
     return ask_stockpilot(
-        request.message
+        user_message=
+            request.message,
+
+        context=
+            request.context,
     )

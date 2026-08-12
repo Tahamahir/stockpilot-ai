@@ -110,9 +110,14 @@ def get_inventory_summary() -> dict:
 def get_replenishment_priorities(
     limit: int = 10,
     urgency: str | None = None,
+    store_name: str | None = None,
 ) -> dict:
     """
     Return latest ML replenishment recommendations.
+
+    Optional filters:
+    - urgency
+    - store_name
 
     urgency:
     critical, high, medium, planned, no_order
@@ -157,17 +162,21 @@ def get_replenishment_priorities(
     else:
         urgency = None
 
+    if store_name:
+        store_name = (
+            store_name
+            .strip()
+        )
+
+    else:
+        store_name = None
+
     # =====================================================
-    # Optional filter
-    #
-    # We intentionally do NOT use:
-    # :urgency IS NULL
-    #
-    # because PostgreSQL may fail to infer the parameter
-    # type through psycopg.
+    # Safe optional filters
     # =====================================================
 
     urgency_filter = ""
+    store_filter = ""
 
     parameters = {
         "limit": limit,
@@ -179,6 +188,16 @@ def get_replenishment_priorities(
         """
 
         parameters["urgency"] = urgency
+
+    if store_name:
+        store_filter = """
+            AND LOWER(stores.store_name)
+                LIKE LOWER(:store_pattern)
+        """
+
+        parameters[
+            "store_pattern"
+        ] = f"%{store_name}%"
 
     query = text(
         f"""
@@ -247,28 +266,33 @@ def get_replenishment_priorities(
 
             {urgency_filter}
 
-        ORDER BY
-            CASE
-                recommendations.urgency_level
+            {store_filter}
+    ORDER BY
+        CASE
+            recommendations.urgency_level
 
-                WHEN 'critical'
-                    THEN 1
+            WHEN 'critical'
+                THEN 1
 
-                WHEN 'high'
-                    THEN 2
+            WHEN 'high'
+                THEN 2
 
-                WHEN 'medium'
-                    THEN 3
+            WHEN 'medium'
+                THEN 3
 
-                WHEN 'planned'
-                    THEN 4
+            WHEN 'planned'
+                THEN 4
 
-                ELSE 5
-            END,
+            ELSE 5
+        END,
 
-            recommendations.recommended_order_quantity DESC
+        recommendations.recommended_order_quantity DESC,
 
-        LIMIT :limit
+        recommendations.estimated_stockout_date ASC NULLS LAST,
+
+        products.sku ASC
+
+    LIMIT :limit
         """
     )
 
@@ -286,14 +310,20 @@ def get_replenishment_priorities(
         )
 
     return {
-        "count": len(rows),
-        "urgency_filter": urgency,
-        "recommendations": rows_to_dicts(
-            rows
-        ),
+        "count":
+            len(rows),
+
+        "urgency_filter":
+            urgency,
+
+        "store_filter":
+            store_name,
+
+        "recommendations":
+            rows_to_dicts(
+                rows
+            ),
     }
-
-
 # =========================================================
 # TOOL 3
 # Product forecast
