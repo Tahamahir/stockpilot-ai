@@ -115,6 +115,21 @@ ROUTE_SCHEMA = {
 def call_ollama(
     payload: dict,
 ) -> dict:
+    # Qwen3 peut utiliser un mode de raisonnement
+    # plus lent. Pour StockPilot, on privilégie
+    # des réponses rapides.
+    payload.setdefault(
+        "think",
+        False,
+    )
+
+    # Garde le modèle chargé pendant 30 minutes
+    # afin d'éviter de le recharger à chaque question.
+    payload.setdefault(
+        "keep_alive",
+        "30m",
+    )
+
     response = httpx.post(
         f"{OLLAMA_BASE_URL}/api/chat",
         json=payload,
@@ -814,9 +829,7 @@ def looks_like_follow_up(
         lower_message.startswith(
             follow_up_starts
         )
-        or len(
-            lower_message.split()
-        ) <= 6
+       
     )
 
 def apply_conversation_context(
