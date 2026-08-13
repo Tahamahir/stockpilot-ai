@@ -84,9 +84,9 @@ services:
       DB_PASSWORD: "${POSTGRES_PASSWORD}"
 
       OLLAMA_BASE_URL: "http://ollama:11434"
-      OLLAMA_MODEL: "qwen3:4b"
+      OLLAMA_MODEL: "qwen3:4b-instruct"
 
-      FAST_BUSINESS_RESPONSES: "true"
+      FAST_BUSINESS_RESPONSES: "false"
 
     ports:
       - "8000:8000"

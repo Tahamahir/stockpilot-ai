@@ -12,7 +12,115 @@ from app.database import get_engine
 # =========================================================
 # Helpers
 # =========================================================
+def get_stockpilot_capabilities(
+    topic: str = "overview",
+) -> dict:
+    """
+    Return authoritative information about
+    StockPilot features and limitations.
 
+    No technical reason should be inferred
+    for unsupported features.
+    """
+
+    capabilities = {
+        "sales_analysis": True,
+        "revenue_analysis": True,
+        "margin_analysis": True,
+        "inventory_health": True,
+        "stockout_detection": True,
+        "low_stock_detection": True,
+        "critical_stock_detection": True,
+        "overstock_detection": True,
+        "demand_forecasting": True,
+        "ml_replenishment": True,
+        "store_comparison": True,
+        "supplier_analysis": True,
+
+        "real_time": False,
+        "automatic_stock_updates": False,
+        "automatic_supplier_orders": False,
+        "automatic_supplier_contact": False,
+        "automatic_promotions": False,
+        "erp_replacement": False,
+        "automatic_business_decisions": False,
+    }
+
+    facts = {
+        "real_time": {
+            "supported": False,
+            "statement": (
+                "StockPilot ne fonctionne pas "
+                "actuellement en temps réel."
+            ),
+        },
+
+        "automatic_orders": {
+            "supported": False,
+            "statement": (
+                "StockPilot recommande des "
+                "réapprovisionnements mais ne passe "
+                "pas automatiquement les commandes "
+                "aux fournisseurs."
+            ),
+        },
+
+        "automatic_promotions": {
+            "supported": False,
+            "statement": (
+                "StockPilot ne déclenche pas "
+                "automatiquement de promotions."
+            ),
+        },
+
+        "erp": {
+            "supported": False,
+            "statement": (
+                "StockPilot est une plateforme "
+                "d'aide à la décision et ne remplace "
+                "pas actuellement un ERP."
+            ),
+        },
+    }
+
+    topic = (
+        str(topic)
+        .strip()
+        .lower()
+    )
+
+    if topic in facts:
+        return {
+            "topic": topic,
+            **facts[topic],
+        }
+
+    return {
+        "topic": "overview",
+
+        "available_features": [
+            "Analyse des ventes historiques",
+            "Analyse du chiffre d'affaires",
+            "Analyse de la marge et des transactions",
+            "Analyse de la santé des stocks",
+            "Détection des ruptures",
+            "Détection des stocks faibles",
+            "Détection des positions critiques",
+            "Détection des surstocks",
+            "Prévisions de demande ML",
+            "Recommandations ML de réapprovisionnement",
+            "Comparaison des magasins",
+            "Analyse des fournisseurs",
+        ],
+
+        "capabilities": capabilities,
+
+        "important_rule": (
+            "Ne jamais inventer la raison technique "
+            "d'une limitation, une fréquence de mise "
+            "à jour ou un délai de traitement."
+        ),
+    }
 def json_safe(value: Any) -> Any:
     if isinstance(value, Decimal):
         return float(value)
