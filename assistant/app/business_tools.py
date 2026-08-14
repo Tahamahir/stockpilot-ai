@@ -81,6 +81,78 @@ def get_stockpilot_capabilities(
                 "pas actuellement un ERP."
             ),
         },
+        "inventory_health": {
+            "supported": True,
+            "statement": (
+                "Le module Inventory Health permet d'analyser "
+                "la santé actuelle du stock par produit et magasin.\n\n"
+                "Il permet notamment de :\n"
+                "- détecter les produits en rupture ;\n"
+                "- identifier les stocks faibles ;\n"
+                "- identifier les positions critiques ;\n"
+                "- détecter les situations de surstock ;\n"
+                "- distinguer les positions de stock saines ;\n"
+                "- consulter la valeur du stock ;\n"
+                "- visualiser les quantités recommandées issues "
+                "des données d'inventaire.\n\n"
+                "L'objectif est d'aider le responsable à identifier "
+                "rapidement les positions nécessitant une attention."
+            ),
+        },
+        "demand_forecast": {
+            "supported": True,
+             "statement": (
+                "Le module Demand Forecast permet de consulter "
+                "les prévisions de demande générées par le modèle "
+                "de machine learning.\n\n"
+                "Il permet notamment de :\n"
+                "- consulter la demande prévue pour un produit ;\n"
+                "- analyser les prévisions par magasin ;\n"
+                "- consulter la demande prévue sur l'horizon "
+                "de prévision disponible ;\n"
+                "- comparer les besoins futurs entre magasins ;\n"
+                "- utiliser les prévisions comme support aux "
+                "décisions de réapprovisionnement.\n\n"
+                "Les prévisions constituent une aide à la décision "
+                "et ne déclenchent pas automatiquement une commande."
+            ),
+        },
+        "sales": {
+            "supported": True,
+            "statement": (
+                "Le module Sales permet d'analyser les performances "
+                "commerciales à partir des données de ventes.\n\n"
+                "Il permet notamment de consulter le chiffre "
+                "d'affaires, les quantités vendues, les transactions, "
+                "le panier moyen, la marge et les performances "
+                "par produit ou magasin."
+            ),
+        },
+
+        "replenishment": {
+            "supported": True,
+            "statement": (
+                "Le module Replenishment présente les recommandations "
+                "de réapprovisionnement générées par StockPilot ML.\n\n"
+                "Il permet d'identifier les produits prioritaires, "
+                "leur niveau d'urgence, les quantités recommandées "
+                "et les estimations de rupture disponibles.\n\n"
+                "Ces recommandations sont des aides à la décision "
+                "et ne déclenchent pas automatiquement des commandes."
+            ),
+            },
+
+        "supplier_performance": {
+            "supported": True,
+            "statement": (
+                "Le module Supplier Performance permet d'analyser "
+                "les performances des fournisseurs.\n\n"
+                "Il permet notamment de consulter leurs scores, "
+                "les taux de livraison à temps, les taux de fulfillment, "
+                "les retards de livraison et d'identifier les "
+                "fournisseurs nécessitant davantage d'attention."
+            ),
+            },
     }
 
     topic = (

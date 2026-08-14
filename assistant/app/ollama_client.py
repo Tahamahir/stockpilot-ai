@@ -113,10 +113,18 @@ STOCKPILOT_TOOLS = [
         "function": {
             "name": "get_inventory_summary",
             "description": (
-                "Retourne les données réelles et vérifiées "
-                "sur la santé actuelle des stocks StockPilot : "
-                "ruptures, stocks faibles, critiques, sains, "
-                "surstocks et valeur du stock."
+                "Récupère les DONNÉES RÉELLES de performance "
+                "des fournisseurs StockPilot : scores, taux de "
+                "livraison à temps, fulfillment, retards, meilleurs "
+                "fournisseurs et fournisseurs à risque. "
+                "Utiliser uniquement lorsque l'utilisateur demande "
+                "des résultats, KPI, classements ou analyses réelles "
+                "sur les fournisseurs. "
+                "NE PAS utiliser lorsque l'utilisateur demande "
+                "simplement ce que propose, fait ou permet le module "
+                "Supplier Performance. Dans ce cas utiliser "
+                "get_stockpilot_capabilities avec "
+                "topic='supplier_performance'."
             ),
             "parameters": {
                 "type": "object",
@@ -260,14 +268,18 @@ STOCKPILOT_TOOLS = [
     "function": {
         "name": "get_stockpilot_capabilities",
         "description": (
-            "Source de vérité sur les fonctionnalités "
-            "et limites actuelles de StockPilot. "
-            "Utiliser lorsque l'utilisateur demande "
-            "ce que StockPilot propose, s'il fonctionne "
-            "en temps réel, s'il automatise les commandes, "
-            "s'il remplace un ERP ou toute autre question "
-            "sur les capacités de la plateforme."
-        ),
+            "Source de vérité sur les fonctionnalités, modules "
+            "et limites de StockPilot. "
+            "Utiliser lorsque l'utilisateur demande ce que fait, "
+            "propose ou permet StockPilot ou un de ses modules. "
+            "Exemples : 'Que propose Inventory Health ?', "
+            "'À quoi sert Demand Forecast ?', "
+            "'Explique Replenishment', "
+            "'Que propose Supplier Performance ?'. "
+            "Pour ces questions, ne pas utiliser les tools "
+            "de données métier."
+            ),
+        
         "parameters": {
             "type": "object",
             "properties": {
@@ -275,6 +287,11 @@ STOCKPILOT_TOOLS = [
                     "type": "string",
                     "enum": [
                         "overview",
+                        "inventory_health",
+                        "sales",
+                        "demand_forecast",
+                        "replenishment",
+                        "supplier_performance",
                         "real_time",
                         "automatic_orders",
                         "automatic_promotions",
@@ -457,6 +474,11 @@ def sanitize_agent_route(
 
     allowed_topics = {
         "overview",
+        "inventory_health",
+        "sales",
+        "demand_forecast",
+        "replenishment",
+        "supplier_performance",
         "real_time",
         "automatic_orders",
         "automatic_promotions",
@@ -727,7 +749,40 @@ ET get_supplier_performance
 
 "Bonjour"
 → aucun tool.
+RÈGLE DE DISTINCTION ENTRE DESCRIPTION D'UN MODULE
+ET CONSULTATION DES DONNÉES :
 
+Si l'utilisateur demande ce qu'un module "propose",
+"fait", "permet", "sert à faire" ou demande de
+"l'expliquer", il demande les fonctionnalités
+du module.
+
+Dans ce cas, utiliser get_stockpilot_capabilities
+avec le topic correspondant.
+
+Exemples :
+
+"Que propose Supplier Performance ?"
+→ get_stockpilot_capabilities
+  topic="supplier_performance"
+
+"À quoi sert Demand Forecast ?"
+→ get_stockpilot_capabilities
+  topic="demand_forecast"
+
+"Explique Inventory Health"
+→ get_stockpilot_capabilities
+  topic="inventory_health"
+
+En revanche, si l'utilisateur demande des chiffres,
+résultats, KPI, classements ou analyses réelles,
+utiliser le business tool correspondant.
+
+"Quels fournisseurs sont les moins performants ?"
+→ get_supplier_performance
+
+"Quelle est la demande prévue pour SKU-00017 ?"
+→ get_product_forecast
 IMPORTANT :
 
 Pour "les plus urgents", "prioritaires",
@@ -4434,6 +4489,43 @@ def build_locked_business_answer(
     Build authoritative business answers for data where
     ordering / classification must never be changed by the LLM.
     """
+        # =====================================================
+    # Supplier performance
+    # =====================================================
+    
+    if (
+        tool_name
+        == "get_supplier_performance"
+    ):
+        return (
+            fallback_business_answer(
+                tool_name=
+                    tool_name,
+
+                tool_result=
+                    tool_result,
+
+                user_message=
+                    user_message,
+            )
+        )
+    if (
+        tool_name
+        == "get_sales_performance"
+    ):
+        return (
+            fallback_business_answer(
+                tool_name=
+                    tool_name,
+
+                tool_result=
+                    tool_result,
+
+                user_message=
+                    user_message,
+            )
+        )
+
     if (
         tool_name
         == "get_stockpilot_capabilities"
@@ -5631,7 +5723,7 @@ def ask_stockpilot(
     # =====================================================
 
     if len(
-        successful_executions
+    successful_executions
     ) > 1:
 
     # =============================================
@@ -5648,29 +5740,51 @@ def ask_stockpilot(
             )
         )
 
-        # =============================================
-        # Natural LLM synthesis
-        # =============================================
+    # =============================================
+    # Detect sensitive ML ranking
+    # =============================================
 
-        try:
-
-            synthesis = (
-                generate_multi_tool_synthesis(
-                    user_message=
-                        user_message,
-
-                    executions=
-                        successful_executions,
-                )
+        has_sensitive_ranking = any(
+            execution.get(
+                "tool",
+                "",
             )
+            == "get_replenishment_priorities"
+            for execution
+            in successful_executions
+        )
 
-        except Exception:
+    # =============================================
+    # Natural LLM synthesis
+    # =============================================
 
+        if has_sensitive_ranking:
+
+                # Replenishment ranking must remain
+            # fully controlled by the backend.
             synthesis = ""
 
-        # =============================================
-        # Final multi-tool response
-        # =============================================
+        else:
+
+            try:
+
+                synthesis = (
+                    generate_multi_tool_synthesis(
+                        user_message=
+                            user_message,
+
+                        executions=
+                            successful_executions,
+                    )
+                )   
+
+            except Exception:
+
+                synthesis = ""
+
+    # =============================================
+    # Final multi-tool response
+    # =============================================
 
         if synthesis:
 
@@ -5683,9 +5797,8 @@ def ask_stockpilot(
         else:
 
             answer = (
-            locked_details
+                locked_details
             )
-
     # =====================================================
     # 7. SINGLE-TOOL answer
     # =====================================================
