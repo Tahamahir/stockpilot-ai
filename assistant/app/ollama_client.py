@@ -704,7 +704,16 @@ def agent_plan_user_request(
     success=False:
         agent planning failed.
     """
+    conversation_memory = (
+        normalize_conversation_context(
+            context
+        )
+        )
 
+    memory_json = json.dumps(
+        conversation_memory,
+        ensure_ascii=False,
+    )
     conversation_context = (
         normalize_conversation_context(
             context
@@ -798,7 +807,61 @@ par exemple :
 "uniquement les critiques".
 
 N'invente jamais de données StockPilot.
+MÉMOIRE CONVERSATIONNELLE :
 
+Tu reçois un CONTEXTE_ACTIF contenant éventuellement :
+
+- last_tool : dernier outil métier utilisé ;
+- active_sku : produit actuellement référencé ;
+- active_store : magasin actuellement référencé ;
+- sku / store_name : filtres précédemment utilisés ;
+- topic : dernier module évoqué.
+
+Utilise ce contexte pour comprendre les références
+conversationnelles comme :
+
+"ce produit"
+"ce SKU"
+"sa prévision"
+"pour lui"
+"ce magasin"
+"seulement là-bas"
+"et à Rabat ?"
+
+IMPORTANT :
+
+Une nouvelle intention explicite de l'utilisateur
+est toujours prioritaire sur l'ancien contexte.
+
+Si l'utilisateur demande une DONNÉE RÉELLE sur
+l'entité active, utilise le business tool correspondant.
+
+Exemple :
+
+CONTEXTE_ACTIF :
+active_sku = SKU-00105
+active_store = Magasin Casablanca
+
+Utilisateur :
+"Et sa prévision ?"
+
+→ utiliser get_product_forecast
+→ sku = SKU-00105
+→ store_name = Magasin Casablanca
+
+NE PAS utiliser get_stockpilot_capabilities dans ce cas.
+
+get_stockpilot_capabilities sert uniquement à expliquer
+ce que fait ou propose un module.
+
+Exemple :
+
+"Que propose Demand Forecast ?"
+→ get_stockpilot_capabilities
+
+"Et sa prévision ?"
+avec active_sku disponible
+→ get_product_forecast
 Contexte conversationnel :
 
 {context_json}
@@ -822,8 +885,12 @@ Contexte conversationnel :
                         "role":
                             "user",
 
-                        "content":
-                            user_message,
+                        "content": (
+                            f"CONTEXTE_ACTIF :\n"
+                            f"{memory_json}\n\n"
+                            f"DEMANDE_UTILISATEUR :\n"
+                            f"{user_message}"
+                        ),
                     },
                 ],
 
@@ -1194,6 +1261,8 @@ def default_route() -> dict:
         "sku": "",
         "store_name": "",
         "topic": "",
+        "active_sku": "",
+        "active_store": "",
     }
 
 def default_conversation_context() -> dict:
@@ -1204,6 +1273,8 @@ def default_conversation_context() -> dict:
         "sku": "",
         "store_name": "",
         "topic": "",
+        "active_sku": "",
+        "active_store": "",
     }
 
 
@@ -1269,7 +1340,24 @@ def route_to_context(
             route.get(
                 "topic",
                 "",
-    ),
+             ),
+        "active_sku":
+            route.get(
+                "active_sku",
+                route.get(
+                    "sku",
+                    "",
+                 ),
+            ),
+
+        "active_store":
+            route.get(
+                "active_store",
+                route.get(
+                    "store_name",
+                    "",
+                ),
+            ),
     }
 
 # =========================================================
@@ -1804,7 +1892,33 @@ def apply_conversation_context(
                 "store_name"
             ]
         )
+    if (
+        route.get("tool")
+        == "get_product_forecast"
+    ):
+        if not route.get("sku"):
+            route["sku"] = (
+                context.get(
+                    "active_sku",
+                    "",
+                )
+                or context.get(
+                    "sku",
+                    "",
+                )
+            )
 
+        if not route.get("store_name"):
+            route["store_name"] = (
+                context.get(
+                    "active_store",
+                    "",
+                )
+                or context.get(
+                    "store_name",
+                    "",
+                )
+            )
     # =====================================================
     # Explicit urgency
     # =====================================================
@@ -4492,7 +4606,26 @@ def build_locked_business_answer(
         # =====================================================
     # Supplier performance
     # =====================================================
-    
+    # =====================================================
+# Product forecast
+# =====================================================
+
+    if (
+        tool_name
+        == "get_product_forecast"
+    ):
+        return (
+            fallback_business_answer(
+                tool_name=
+                    tool_name,
+
+                tool_result=
+                    tool_result,
+
+                user_message=
+                    user_message,
+            )
+        )
     if (
         tool_name
         == "get_supplier_performance"
@@ -5564,7 +5697,151 @@ Sémantique du tool utilisé :
     return localize_business_terms(
         cleaned
     )
+def enrich_route_with_active_entity(
+    route: dict,
+    executions: list[dict],
+) -> dict:
+    """
+    Enrich the response route with the main business
+    entity selected by the executed tools.
 
+    This information is used by conversation memory
+    for follow-up questions such as:
+    "Et sa prévision ?"
+    """
+
+    enriched_route = dict(
+        route
+    )
+
+    enriched_route.setdefault(
+        "active_sku",
+        "",
+    )
+
+    enriched_route.setdefault(
+        "active_store",
+        "",
+    )
+
+    # We inspect executions in reverse order so that
+    # the most recent relevant business tool has priority.
+    for execution in reversed(
+        executions
+    ):
+
+        if not execution.get(
+            "success",
+            False,
+        ):
+            continue
+
+        tool_name = execution.get(
+            "tool",
+            "",
+        )
+
+        result = execution.get(
+            "result",
+            {},
+        )
+
+        # =================================================
+        # Replenishment
+        # =================================================
+
+        if (
+            tool_name
+            == "get_replenishment_priorities"
+        ):
+
+            recommendations = (
+                result.get(
+                    "recommendations",
+                    [],
+                )
+            )
+
+            if recommendations:
+
+                first = recommendations[0]
+
+                sku = (
+                    first.get(
+                        "sku",
+                        "",
+                    )
+                    or ""
+                )
+
+                store_name = (
+                    first.get(
+                        "store_name",
+                        "",
+                    )
+                    or ""
+                )
+
+                if sku:
+                    enriched_route[
+                        "active_sku"
+                    ] = sku
+
+                if store_name:
+                    enriched_route[
+                        "active_store"
+                    ] = store_name
+
+                break
+                # =================================================
+        # Product forecast
+        # =================================================
+
+        if (
+            tool_name
+            == "get_product_forecast"
+        ):
+
+            sku = (
+                result.get(
+                    "sku",
+                    "",
+                )
+                or execution.get(
+                    "arguments",
+                    {},
+                ).get(
+                    "sku",
+                    "",
+                )
+                or ""
+            )
+
+            arguments = execution.get(
+                "arguments",
+                {},
+            )
+
+            store_name = (
+                arguments.get(
+                    "store_name",
+                    "",
+                )
+                or ""
+            )
+
+            if sku:
+                enriched_route[
+                    "active_sku"
+                ] = sku
+
+            if store_name:
+                enriched_route[
+                    "active_store"
+                ] = store_name
+
+            break
+    return enriched_route
 def ask_stockpilot(
     user_message: str,
     context: dict | None = None,
@@ -5918,6 +6195,40 @@ def ask_stockpilot(
         .get(
             "route",
             routes[-1],
+        )
+    )
+    previous_context = (
+        normalize_conversation_context(
+            context
+        )
+    )
+
+    if not primary_route.get(
+        "active_sku",
+    ):
+        primary_route[
+            "active_sku"
+        ] = previous_context.get(
+            "active_sku",
+            "",
+        )
+
+    if not primary_route.get(
+        "active_store",
+    ):
+        primary_route[
+            "active_store"
+        ] = previous_context.get(
+            "active_store",
+            "",
+        )
+    primary_route = (
+        enrich_route_with_active_entity(
+            route=
+                primary_route,
+
+            executions=
+                successful_executions,
         )
     )
 
