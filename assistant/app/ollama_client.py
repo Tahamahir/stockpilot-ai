@@ -5896,6 +5896,194 @@ def enrich_route_with_active_entity(
 
             break
     return enriched_route
+def build_locked_forecast_comparison(
+    executions: list[dict],
+) -> str | None:
+    """
+    Build a deterministic comparison when several
+    product forecasts were successfully executed.
+
+    All numbers come directly from verified tool results.
+    """
+
+    forecast_executions = [
+        execution
+        for execution in executions
+        if (
+            execution.get("success", False)
+            and execution.get("tool")
+            == "get_product_forecast"
+            and execution.get(
+                "result",
+                {},
+            ).get(
+                "found",
+                False,
+            )
+        )
+    ]
+
+    if len(forecast_executions) < 2:
+        return None
+
+    forecasts = []
+
+    for execution in forecast_executions:
+        result = execution.get(
+            "result",
+            {},
+        )
+
+        forecasts.append(
+            {
+                "sku":
+                    result.get(
+                        "sku",
+                        "",
+                    ),
+
+                "product_name":
+                    result.get(
+                        "product_name",
+                        "",
+                    ),
+
+                "store_name":
+                    result.get(
+                        "store_search",
+                        "",
+                    ),
+
+                "forecast_total":
+                    float(
+                        result.get(
+                            "forecast_total",
+                            0,
+                        )
+                        or 0
+                    ),
+
+                "horizon_days":
+                    int(
+                        result.get(
+                            "horizon_days",
+                            0,
+                        )
+                        or 0
+                    ),
+
+                "start_date":
+                    result.get(
+                        "forecast_start_date",
+                        "",
+                    ),
+
+                "end_date":
+                    result.get(
+                        "forecast_end_date",
+                        "",
+                    ),
+            }
+        )
+
+    lines = [
+        "### Comparaison des prévisions",
+        "",
+    ]
+
+    for index, forecast in enumerate(
+        forecasts,
+        start=1,
+    ):
+        lines.append(
+            (
+                f"{index}. **{forecast['sku']}**"
+                f" — {forecast['product_name']}"
+                f" — {forecast['store_name']}"
+            )
+        )
+
+        lines.append(
+            (
+                f"   Prévision : "
+                f"**{forecast['forecast_total']:.2f} unités**"
+                f" sur {forecast['horizon_days']} jours"
+            )
+        )
+
+    # Comparison of the two forecasts
+    # selected by the planner.
+    if len(forecasts) == 2:
+
+        first = forecasts[0]
+        second = forecasts[1]
+
+        first_total = first[
+            "forecast_total"
+        ]
+
+        second_total = second[
+            "forecast_total"
+        ]
+
+        difference = abs(
+            first_total
+            - second_total
+        )
+
+        lines.extend(
+            [
+                "",
+                "### Écart",
+                "",
+            ]
+        )
+
+        if first_total > second_total:
+            lines.append(
+                (
+                    f"**{first['sku']}** présente "
+                    f"une demande prévue supérieure "
+                    f"de **{difference:.2f} unités** "
+                    f"à **{second['sku']}**."
+                )
+            )
+
+        elif second_total > first_total:
+            lines.append(
+                (
+                    f"**{second['sku']}** présente "
+                    f"une demande prévue supérieure "
+                    f"de **{difference:.2f} unités** "
+                    f"à **{first['sku']}**."
+                )
+            )
+
+        else:
+            lines.append(
+                (
+                    "Les deux produits ont la même "
+                    "demande prévue sur la période."
+                )
+            )
+
+        if (
+            first["start_date"]
+            == second["start_date"]
+            and first["end_date"]
+            == second["end_date"]
+        ):
+            lines.append(
+                (
+                    f"Période comparée : "
+                    f"{first['start_date']} "
+                    f"au {first['end_date']}."
+                )
+            )
+
+    return "\n".join(
+        lines
+    )
 def ask_stockpilot(
     user_message: str,
     context: dict | None = None,
@@ -5908,7 +6096,18 @@ def ask_stockpilot(
     2. Backend validates the plan.
     3. Verified tools are executed.
     4. Sensitive facts remain locked.
+    5. Conversation memory is preserved.
     """
+
+    # =====================================================
+    # 0. Normalize previous conversation context
+    # =====================================================
+
+    previous_context = (
+        normalize_conversation_context(
+            context
+        )
+    )
 
     # =====================================================
     # 1. Agent planning
@@ -5968,6 +6167,33 @@ def ask_stockpilot(
                 "de StockPilot."
             )
 
+        generic_route = (
+            default_route()
+        )
+
+        # Preserve active conversation memory even when
+        # the current message does not require a tool.
+        generic_route[
+            "active_sku"
+        ] = previous_context.get(
+            "active_sku",
+            "",
+        )
+
+        generic_route[
+            "active_store"
+        ] = previous_context.get(
+            "active_store",
+            "",
+        )
+
+        generic_route[
+            "recent_entities"
+        ] = previous_context.get(
+            "recent_entities",
+            [],
+        )
+
         return {
             "model":
                 OLLAMA_MODEL,
@@ -5979,12 +6205,10 @@ def ask_stockpilot(
                 [],
 
             "route":
-                default_route(),
+                generic_route,
 
             "context":
-                normalize_conversation_context(
-                    context
-                ),
+                previous_context,
         }
 
     # =====================================================
@@ -6011,6 +6235,41 @@ def ask_stockpilot(
     # =====================================================
 
     if not successful_executions:
+
+        failure_route = dict(
+            routes[-1]
+        )
+
+        # Preserve memory even when tool execution fails.
+        if not failure_route.get(
+            "active_sku",
+        ):
+            failure_route[
+                "active_sku"
+            ] = previous_context.get(
+                "active_sku",
+                "",
+            )
+
+        if not failure_route.get(
+            "active_store",
+        ):
+            failure_route[
+                "active_store"
+            ] = previous_context.get(
+                "active_store",
+                "",
+            )
+
+        if not failure_route.get(
+            "recent_entities",
+        ):
+            failure_route[
+                "recent_entities"
+            ] = previous_context.get(
+                "recent_entities",
+                [],
+            )
 
         return {
             "model":
@@ -6041,11 +6300,11 @@ def ask_stockpilot(
             ],
 
             "route":
-                routes[-1],
+                failure_route,
 
             "context":
                 route_to_context(
-                    routes[-1]
+                    failure_route
                 ),
         }
 
@@ -6054,12 +6313,12 @@ def ask_stockpilot(
     # =====================================================
 
     if len(
-    successful_executions
+        successful_executions
     ) > 1:
 
-    # =============================================
-    # Deterministic factual details
-    # =============================================
+        # =============================================
+        # 6.1 Deterministic locked details
+        # =============================================
 
         locked_details = (
             build_locked_multi_tool_answer(
@@ -6071,65 +6330,103 @@ def ask_stockpilot(
             )
         )
 
-    # =============================================
-    # Detect sensitive ML ranking
-    # =============================================
+        # =============================================
+        # 6.2 Special case:
+        # multiple verified product forecasts
+        # =============================================
 
-        has_sensitive_ranking = any(
-            execution.get(
-                "tool",
-                "",
+        forecast_comparison = (
+            build_locked_forecast_comparison(
+                successful_executions
             )
-            == "get_replenishment_priorities"
-            for execution
-            in successful_executions
         )
 
-    # =============================================
-    # Natural LLM synthesis
-    # =============================================
+        # IMPORTANT:
+        # The comparison already contains the complete
+        # verified answer. We must NOT append individual
+        # forecast renderers afterwards.
+        if forecast_comparison:
 
-        if has_sensitive_ranking:
-
-                # Replenishment ranking must remain
-            # fully controlled by the backend.
-            synthesis = ""
+            answer = (
+                forecast_comparison
+            )
 
         else:
 
-            try:
+            # =========================================
+            # 6.3 Sensitive ranking detection
+            # =========================================
 
-                synthesis = (
-                    generate_multi_tool_synthesis(
-                        user_message=
-                            user_message,
-
-                        executions=
-                            successful_executions,
+            has_sensitive_ranking = any(
+                (
+                    execution.get(
+                        "tool",
+                        "",
                     )
-                )   
+                    == "get_replenishment_priorities"
+                )
+                for execution
+                in successful_executions
+            )
 
-            except Exception:
+            # =========================================
+            # 6.4 Optional natural-language synthesis
+            # =========================================
 
+            if has_sensitive_ranking:
+
+                # Replenishment rankings must remain
+                # fully controlled by backend outputs.
                 synthesis = ""
 
-    # =============================================
-    # Final multi-tool response
-    # =============================================
+            else:
 
-        if synthesis:
+                try:
+                    synthesis = (
+                        generate_multi_tool_synthesis(
+                            user_message=
+                                user_message,
 
-            answer = (
-                f"{synthesis}\n\n"
-                "---\n\n"
-                f"{locked_details}"
-            )
+                            executions=
+                                successful_executions,
+                        )
+                    )
 
-        else:
+                except Exception:
+                    synthesis = ""
 
-            answer = (
-                locked_details
-            )
+            # =========================================
+            # 6.5 Final non-forecast multi-tool answer
+            # =========================================
+
+            answer_parts = []
+
+            if synthesis:
+                answer_parts.append(
+                    synthesis
+                )
+
+            if locked_details:
+                answer_parts.append(
+                    locked_details
+                )
+
+            if answer_parts:
+
+                answer = (
+                    "\n\n---\n\n".join(
+                        answer_parts
+                    )
+                )
+
+            else:
+
+                answer = (
+                    "Les données StockPilot ont été "
+                    "récupérées, mais aucune réponse "
+                    "fiable n'a pu être construite."
+                )
+
     # =====================================================
     # 7. SINGLE-TOOL answer
     # =====================================================
@@ -6140,18 +6437,28 @@ def ask_stockpilot(
             successful_executions[0]
         )
 
-        tool_name = execution[
-            "tool"
-        ]
-
-        result = execution[
-            "result"
-        ]
-
-        arguments = execution.get(
-            "arguments",
-            {},
+        tool_name = (
+            execution[
+                "tool"
+            ]
         )
+
+        result = (
+            execution[
+                "result"
+            ]
+        )
+
+        arguments = (
+            execution.get(
+                "arguments",
+                {},
+            )
+        )
+
+        # =============================================
+        # 7.1 Locked deterministic response
+        # =============================================
 
         locked_answer = (
             build_locked_business_answer(
@@ -6172,6 +6479,10 @@ def ask_stockpilot(
                 locked_answer
             )
 
+        # =============================================
+        # 7.2 Fast deterministic fallback
+        # =============================================
+
         elif FAST_BUSINESS_RESPONSES:
 
             answer = (
@@ -6186,6 +6497,10 @@ def ask_stockpilot(
                         user_message,
                 )
             )
+
+        # =============================================
+        # 7.3 Qwen final generation
+        # =============================================
 
         else:
 
@@ -6222,7 +6537,7 @@ def ask_stockpilot(
                 )
 
     # =====================================================
-    # 8. Response metadata
+    # 8. Tools metadata
     # =====================================================
 
     tools_used = [
@@ -6242,20 +6557,23 @@ def ask_stockpilot(
         in successful_executions
     ]
 
-    # The last selected business tool becomes
-    # the structured context for a follow-up.
-    primary_route = (
+    # =====================================================
+    # 9. Build conversation memory
+    # =====================================================
+
+    # The last successfully executed business tool becomes
+    # the primary structured route for the next turn.
+    primary_route = dict(
         successful_executions[-1]
         .get(
             "route",
             routes[-1],
         )
     )
-    previous_context = (
-        normalize_conversation_context(
-            context
-        )
-    )
+
+    # =============================================
+    # Preserve existing active entity
+    # =============================================
 
     if not primary_route.get(
         "active_sku",
@@ -6277,6 +6595,10 @@ def ask_stockpilot(
             "",
         )
 
+    # =============================================
+    # Preserve ranked recent entities
+    # =============================================
+
     if not primary_route.get(
         "recent_entities",
     ):
@@ -6285,7 +6607,11 @@ def ask_stockpilot(
         ] = previous_context.get(
             "recent_entities",
             [],
-        )    
+        )
+
+    # =============================================
+    # Enrich memory from actual tool results
+    # =============================================
 
     primary_route = (
         enrich_route_with_active_entity(
@@ -6296,7 +6622,10 @@ def ask_stockpilot(
                 successful_executions,
         )
     )
-    
+
+    # =====================================================
+    # 10. Final API response
+    # =====================================================
 
     return {
         "model":
