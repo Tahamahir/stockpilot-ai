@@ -1263,6 +1263,7 @@ def default_route() -> dict:
         "topic": "",
         "active_sku": "",
         "active_store": "",
+        "recent_entities": [],
     }
 
 def default_conversation_context() -> dict:
@@ -1275,6 +1276,7 @@ def default_conversation_context() -> dict:
         "topic": "",
         "active_sku": "",
         "active_store": "",
+        "recent_entities": [],
     }
 
 
@@ -1357,6 +1359,11 @@ def route_to_context(
                     "store_name",
                     "",
                 ),
+            ),
+        "recent_entities":
+            route.get(
+                "recent_entities",
+                [],
             ),
     }
 
@@ -5723,6 +5730,10 @@ def enrich_route_with_active_entity(
         "active_store",
         "",
     )
+    enriched_route.setdefault(
+        "recent_entities",
+        [],
+    )
 
     # We inspect executions in reverse order so that
     # the most recent relevant business tool has priority.
@@ -5746,7 +5757,7 @@ def enrich_route_with_active_entity(
             {},
         )
 
-        # =================================================
+               # =================================================
         # Replenishment
         # =================================================
 
@@ -5754,15 +5765,57 @@ def enrich_route_with_active_entity(
             tool_name
             == "get_replenishment_priorities"
         ):
-
-            recommendations = (
-                result.get(
-                    "recommendations",
-                    [],
-                )
+            recommendations = result.get(
+                "recommendations",
+                [],
             )
 
             if recommendations:
+
+                # ==========================================
+                # Store the entities returned by the ranking
+                # ==========================================
+
+                recent_entities = []
+
+                for index, recommendation in enumerate(
+                    recommendations,
+                    start=1,
+                ):
+                    sku = (
+                        recommendation.get(
+                            "sku",
+                            "",
+                        )
+                        or ""
+                    )
+
+                    store_name = (
+                        recommendation.get(
+                            "store_name",
+                            "",
+                        )
+                        or ""
+                    )
+
+                    if not sku:
+                        continue
+
+                    recent_entities.append(
+                        {
+                            "rank": index,
+                            "sku": sku,
+                            "store_name": store_name,
+                        }
+                    )
+
+                enriched_route[
+                    "recent_entities"
+                ] = recent_entities
+
+                # ==========================================
+                # First ranked entity becomes active
+                # ==========================================
 
                 first = recommendations[0]
 
@@ -5839,6 +5892,7 @@ def enrich_route_with_active_entity(
                 enriched_route[
                     "active_store"
                 ] = store_name
+
 
             break
     return enriched_route
@@ -6222,6 +6276,17 @@ def ask_stockpilot(
             "active_store",
             "",
         )
+
+    if not primary_route.get(
+        "recent_entities",
+    ):
+        primary_route[
+            "recent_entities"
+        ] = previous_context.get(
+            "recent_entities",
+            [],
+        )    
+
     primary_route = (
         enrich_route_with_active_entity(
             route=
@@ -6231,6 +6296,7 @@ def ask_stockpilot(
                 successful_executions,
         )
     )
+    
 
     return {
         "model":
