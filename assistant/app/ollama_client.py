@@ -816,6 +816,8 @@ Tu reçois un CONTEXTE_ACTIF contenant éventuellement :
 - active_store : magasin actuellement référencé ;
 - sku / store_name : filtres précédemment utilisés ;
 - topic : dernier module évoqué.
+- active_entities : liste des entités actuellement impliquées ensemble
+  dans le raisonnement ou la comparaison ;
 
 Utilise ce contexte pour comprendre les références
 conversationnelles comme :
@@ -827,6 +829,76 @@ conversationnelles comme :
 "ce magasin"
 "seulement là-bas"
 "et à Rabat ?"
+GESTION DE PLUSIEURS ENTITÉS ACTIVES :
+
+`active_entities` représente plusieurs entités qui sont actuellement
+au centre de la conversation.
+
+Lorsque `active_entities` contient plusieurs éléments, une demande
+qui fait référence au groupe, à une comparaison entre ces éléments,
+ou qui demande lequel possède une certaine propriété doit être
+résolue sur l'ensemble des entités concernées.
+
+Dans ce cas :
+
+- ne réduis PAS automatiquement la demande à `active_sku` ;
+- sélectionne les outils nécessaires pour CHAQUE entité concernée ;
+- utilise les SKU et magasins présents dans `active_entities` ;
+- plusieurs appels au même outil sont autorisés ;
+- conserve l'ordre des entités lorsqu'il est pertinent.
+
+`active_sku` représente seulement l'entité individuelle la plus
+récemment active.
+
+`active_entities` est prioritaire lorsque la demande concerne
+explicitement ou implicitement plusieurs entités.
+
+Une nouvelle entité explicitement fournie par l'utilisateur reste
+toujours prioritaire sur la mémoire existante.
+EXEMPLE 1
+
+CONTEXTE_ACTIF :
+active_sku = SKU-00113
+
+active_entities = [
+  {{
+    "sku": "SKU-00105",
+    "store_name": "Magasin Casablanca"
+  }},
+  {{
+    "sku": "SKU-00113",
+    "store_name": "Magasin Casablanca"
+  }}
+]
+
+Utilisateur :
+"Lequel a la plus forte prévision ?"
+
+→ la question concerne les deux entités actives
+→ appeler get_product_forecast pour SKU-00105 / Magasin Casablanca
+→ appeler get_product_forecast pour SKU-00113 / Magasin Casablanca
+
+
+EXEMPLE 2
+
+Même contexte.
+
+Utilisateur :
+"Donne-moi leurs prévisions"
+
+→ appeler get_product_forecast pour chacune des deux entités
+
+
+EXEMPLE 3
+
+Même contexte.
+
+Utilisateur :
+"Quelle est la prévision de SKU-00017 à Rabat ?"
+
+→ la nouvelle entité explicite est prioritaire
+→ appeler uniquement get_product_forecast
+   pour SKU-00017 / Rabat
 
 IMPORTANT :
 
@@ -1264,9 +1336,12 @@ def default_route() -> dict:
         "active_sku": "",
         "active_store": "",
         "recent_entities": [],
+        "active_entities": [],
     }
 
 def default_conversation_context() -> dict:
+    
+
     return {
         "last_tool": "none",
         "limit": 5,
@@ -1277,6 +1352,7 @@ def default_conversation_context() -> dict:
         "active_sku": "",
         "active_store": "",
         "recent_entities": [],
+        "active_entities": [],
     }
 
 
@@ -1365,6 +1441,11 @@ def route_to_context(
                 "recent_entities",
                 [],
             ),
+        "active_entities":
+            route.get(
+            "active_entities",
+            [],
+        ),
     }
 
 # =========================================================
@@ -6084,6 +6165,110 @@ def build_locked_forecast_comparison(
     return "\n".join(
         lines
     )
+def enrich_route_with_active_entities(
+    route: dict,
+    executions: list[dict],
+) -> dict:
+    """
+    Store several simultaneously active business entities
+    when a multi-entity operation was executed.
+
+    Example:
+    comparison of two product forecasts.
+    """
+
+    enriched_route = dict(
+        route
+    )
+
+    enriched_route.setdefault(
+        "active_entities",
+        [],
+    )
+
+    forecast_entities = []
+
+    for execution in executions:
+
+        if not execution.get(
+            "success",
+            False,
+        ):
+            continue
+
+        if (
+            execution.get(
+                "tool",
+                "",
+            )
+            != "get_product_forecast"
+        ):
+            continue
+
+        result = execution.get(
+            "result",
+            {},
+        )
+
+        if not result.get(
+            "found",
+            False,
+        ):
+            continue
+
+        sku = (
+            result.get(
+                "sku",
+                "",
+            )
+            or execution.get(
+                "arguments",
+                {},
+            ).get(
+                "sku",
+                "",
+            )
+            or ""
+        )
+
+        store_name = (
+            result.get(
+                "store_search",
+                "",
+            )
+            or execution.get(
+                "arguments",
+                {},
+            ).get(
+                "store_name",
+                "",
+            )
+            or ""
+        )
+
+        if not sku:
+            continue
+
+        entity = {
+            "sku": sku,
+            "store_name": store_name,
+        }
+
+        if entity not in forecast_entities:
+            forecast_entities.append(
+                entity
+            )
+
+    # Multiple forecasts mean several entities are
+    # simultaneously active in the conversation.
+    if len(
+        forecast_entities
+    ) >= 2:
+        enriched_route[
+            "active_entities"
+        ] = forecast_entities
+
+    return enriched_route
 def ask_stockpilot(
     user_message: str,
     context: dict | None = None,
@@ -6259,6 +6444,15 @@ def ask_stockpilot(
             ] = previous_context.get(
                 "active_store",
                 "",
+            )
+        if not primary_route.get(
+            "active_entities",
+        ):
+            primary_route[
+                "active_entities"
+            ] = previous_context.get(
+                "active_entities",
+                [],
             )
 
         if not failure_route.get(
@@ -6620,6 +6814,12 @@ def ask_stockpilot(
 
             executions=
                 successful_executions,
+        )
+    )
+    primary_route = (
+        enrich_route_with_active_entities(
+            route=primary_route,
+            executions=successful_executions,
         )
     )
 
